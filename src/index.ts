@@ -5,7 +5,7 @@ import { config } from './config.js';
 import './db/client.js';
 
 async function main(): Promise<void> {
-  const app = buildServer();
+  const app = await buildServer();
 
   try {
     await app.listen({ port: config.port, host: '0.0.0.0' });

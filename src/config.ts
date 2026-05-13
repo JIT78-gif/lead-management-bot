@@ -32,6 +32,19 @@ export const config = {
   db: {
     path: optional('DB_PATH', './data/leads.db'),
   },
+
+  dashboard: {
+    password: required('DASHBOARD_PASSWORD'),
+    sessionSecret: requireMinLength('SESSION_SECRET', 32),
+  },
 } as const;
+
+function requireMinLength(name: string, minLength: number): string {
+  const value = required(name);
+  if (value.length < minLength) {
+    throw new Error(`Env var ${name} must be at least ${minLength} characters`);
+  }
+  return value;
+}
 
 export type Config = typeof config;

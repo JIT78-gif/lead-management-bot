@@ -19,16 +19,18 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 
 CREATE TABLE IF NOT EXISTS leads (
-  id                INTEGER PRIMARY KEY AUTOINCREMENT,
-  phone             TEXT UNIQUE NOT NULL,
-  name              TEXT,
-  industry          TEXT,
-  team_size         TEXT,
-  website_url       TEXT,
-  social_handle     TEXT,
-  status            TEXT NOT NULL DEFAULT 'new_qualified',
-  created_at        INTEGER NOT NULL,
-  updated_at        INTEGER NOT NULL,
+  id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone                    TEXT UNIQUE NOT NULL,
+  name                     TEXT,
+  industry                 TEXT,
+  team_size                TEXT,
+  website_url              TEXT,
+  social_handle            TEXT,
+  status                   TEXT NOT NULL DEFAULT 'new_qualified',
+  notes                    TEXT,
+  last_status_change_at    INTEGER,
+  created_at               INTEGER NOT NULL,
+  updated_at               INTEGER NOT NULL,
   FOREIGN KEY (phone) REFERENCES conversations(phone)
 );
 

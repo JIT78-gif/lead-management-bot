@@ -1,0 +1,202 @@
+@import "tailwindcss";
+
+/* ───────────────────────────────────────────────────────────
+   DESIGN SYSTEM — Botifys Lead Dashboard
+   Aesthetic: Editorial minimalism. Type-driven. B&W with one
+   sharp accent. Inspired by Linear / Vercel / Stripe-internal.
+   ─────────────────────────────────────────────────────────── */
+
+@theme {
+  /* ── Raw palette (never used directly in components) ── */
+  --color-ink-50: #fafafa;
+  --color-ink-100: #f5f5f5;
+  --color-ink-200: #e7e7e7;
+  --color-ink-300: #d4d4d4;
+  --color-ink-400: #a3a3a3;
+  --color-ink-500: #737373;
+  --color-ink-600: #525252;
+  --color-ink-700: #404040;
+  --color-ink-800: #262626;
+  --color-ink-850: #1a1a1a;
+  --color-ink-900: #141414;
+  --color-ink-950: #0a0a0a;
+
+  --color-accent: #ff4d2e;
+  --color-accent-soft: #fff2ed;
+
+  --color-blue: #2563eb;
+  --color-blue-soft: #eff6ff;
+  --color-amber: #d97706;
+  --color-amber-soft: #fffbeb;
+  --color-emerald: #059669;
+  --color-emerald-soft: #ecfdf5;
+  --color-slate: #475569;
+  --color-slate-soft: #f1f5f9;
+
+  /* ── Typography ── */
+  --font-display: "Fraunces", "Times New Roman", serif;
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "Courier New", monospace;
+
+  /* ── Radii (restrained, no pill buttons) ── */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+
+  /* ── Motion ── */
+  --ease-out-quart: cubic-bezier(0.2, 0, 0, 1);
+}
+
+/* ── Semantic tokens — light mode ── */
+:root {
+  --paper: var(--color-ink-50);
+  --paper-elevated: #ffffff;
+  --surface-1: #ffffff;
+  --surface-2: var(--color-ink-100);
+
+  --ink: var(--color-ink-950);
+  --ink-2: var(--color-ink-700);
+  --ink-3: var(--color-ink-500);
+  --ink-4: var(--color-ink-400);
+
+  --border: var(--color-ink-200);
+  --border-strong: var(--color-ink-300);
+
+  --focus-ring: var(--color-ink-950);
+}
+
+/* ── Semantic tokens — dark mode ── */
+:root.dark {
+  --paper: var(--color-ink-950);
+  --paper-elevated: var(--color-ink-900);
+  --surface-1: var(--color-ink-900);
+  --surface-2: var(--color-ink-850);
+
+  --ink: var(--color-ink-50);
+  --ink-2: var(--color-ink-300);
+  --ink-3: var(--color-ink-400);
+  --ink-4: var(--color-ink-500);
+
+  --border: var(--color-ink-800);
+  --border-strong: var(--color-ink-700);
+
+  --focus-ring: var(--color-ink-50);
+}
+
+@theme inline {
+  /* Expose semantic tokens as Tailwind utilities */
+  --color-paper: var(--paper);
+  --color-paper-elevated: var(--paper-elevated);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+}
+
+/* ── Global type & defaults ── */
+html {
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01", "cv11";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.font-display {
+  font-family: var(--font-display);
+  font-feature-settings: "ss01";
+  letter-spacing: -0.01em;
+}
+
+.font-mono {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Tabular figures everywhere a number lives in a column */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Focus rings — visible, not removed */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Subtle text selection */
+::selection {
+  background: var(--ink);
+  color: var(--paper);
+}
+
+/* Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Grain overlay for atmosphere (very subtle) */
+.grain {
+  position: relative;
+}
+.grain::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.4'/%3E%3C/svg%3E");
+  opacity: 0.025;
+  z-index: 1;
+  mix-blend-mode: overlay;
+}
+
+/* Stagger reveal animation */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.rise-in {
+  animation: rise-in 360ms var(--ease-out-quart) backwards;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.fade-in {
+  animation: fade-in 220ms var(--ease-out-quart) backwards;
+}

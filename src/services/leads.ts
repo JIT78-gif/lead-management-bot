@@ -10,6 +10,23 @@ export type Direction = 'in' | 'out';
 
 export type TeamSize = 'solo' | '2-5' | '6-10' | '11-25' | '25+';
 
+export type LeadStatus =
+  | 'new_qualified'
+  | 'contacted'
+  | 'hot'
+  | 'cold'
+  | 'won'
+  | 'lost';
+
+export const LEAD_STATUSES: readonly LeadStatus[] = [
+  'new_qualified',
+  'contacted',
+  'hot',
+  'cold',
+  'won',
+  'lost',
+] as const;
+
 export interface ConversationRow {
   phone: string;
   whatsapp_name: string | null;
@@ -27,10 +44,37 @@ export interface LeadData {
   social_handle: string | null;
 }
 
+export interface LeadRow {
+  id: number;
+  phone: string;
+  name: string | null;
+  industry: string | null;
+  team_size: TeamSize | null;
+  website_url: string | null;
+  social_handle: string | null;
+  status: LeadStatus;
+  notes: string | null;
+  last_status_change_at: number | null;
+  created_at: number;
+  updated_at: number;
+}
+
 export interface MessageRow {
   direction: Direction;
   text: string;
   created_at: number;
+}
+
+export interface ListLeadsFilters {
+  status?: LeadStatus;
+  search?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface UpdateLeadPatch {
+  status?: LeadStatus;
+  notes?: string | null;
 }
 
 const now = (): number => Date.now();
@@ -146,4 +190,76 @@ export function saveQualifiedLead(phone: string, data: LeadData): void {
     created_at: ts,
     updated_at: ts,
   });
+}
+
+// --- Phase 2 dashboard queries ---
+
+const stmtGetLead = db.prepare<[string]>('SELECT * FROM leads WHERE phone = ?');
+
+export function getLead(phone: string): LeadRow | undefined {
+  return stmtGetLead.get(phone) as LeadRow | undefined;
+}
+
+export function listLeads(filters: ListLeadsFilters = {}): LeadRow[] {
+  const where: string[] = [];
+  const params: Record<string, unknown> = {};
+
+  if (filters.status) {
+    where.push('status = @status');
+    params.status = filters.status;
+  }
+
+  if (filters.search && filters.search.trim() !== '') {
+    where.push(
+      '(LOWER(name) LIKE @search OR LOWER(industry) LIKE @search OR phone LIKE @search)'
+    );
+    params.search = `%${filters.search.trim().toLowerCase()}%`;
+  }
+
+  const limit = Math.min(Math.max(filters.limit ?? 50, 1), 200);
+  const offset = Math.max(filters.offset ?? 0, 0);
+
+  const sql = `
+    SELECT * FROM leads
+    ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
+    ORDER BY created_at DESC
+    LIMIT ${limit} OFFSET ${offset}
+  `;
+
+  return db.prepare(sql).all(params) as LeadRow[];
+}
+
+const stmtUpdateLeadFields = db.prepare(
+  `UPDATE leads SET
+     status = COALESCE(@status, status),
+     notes = COALESCE(@notes_new, notes),
+     last_status_change_at = COALESCE(@last_status_change_at, last_status_change_at),
+     updated_at = @updated_at
+   WHERE phone = @phone`
+);
+
+/**
+ * Patch one or more mutable fields on a lead. Returns the updated row, or
+ * undefined if no lead exists at that phone.
+ */
+export function updateLead(
+  phone: string,
+  patch: UpdateLeadPatch
+): LeadRow | undefined {
+  const current = getLead(phone);
+  if (!current) return undefined;
+
+  const ts = now();
+  const statusChanged =
+    patch.status !== undefined && patch.status !== current.status;
+
+  stmtUpdateLeadFields.run({
+    phone,
+    status: patch.status ?? null,
+    notes_new: patch.notes === undefined ? null : patch.notes,
+    last_status_change_at: statusChanged ? ts : null,
+    updated_at: ts,
+  });
+
+  return getLead(phone);
 }
