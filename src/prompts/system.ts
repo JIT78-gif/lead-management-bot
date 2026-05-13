@@ -1,9 +1,5 @@
 /**
  * The brain of the bot. Edit this to change conversation behavior.
- *
- * Fill in the two TODOs below before going live. They affect what the bot
- * tells customers when they ask side questions like "how much does it cost?"
- * or "when will someone call me?".
  */
 
 const SALES_RESPONSE_WINDOW = '1 hour';

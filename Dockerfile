@@ -44,6 +44,7 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV DB_PATH=/app/data/leads.db
+ENV AUDIO_DIR=/app/data/audio
 
 # Backend
 COPY --from=backend-build /app/node_modules ./node_modules
