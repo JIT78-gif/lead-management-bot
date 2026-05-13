@@ -1,7 +1,11 @@
 import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import secureSession from '@fastify/secure-session';
+import fastifyStatic from '@fastify/static';
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { resolve, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { config } from './config.js';
 import { webhookRoutes } from './routes/webhook.js';
 import { authRoutes } from './routes/auth.js';
@@ -46,5 +50,44 @@ export async function buildServer() {
   await app.register(leadsRoutes);
   await app.register(statsRoutes);
 
+  // Serve the built React dashboard under /dashboard/* in production. In dev,
+  // Vite runs the SPA on a separate port and proxies /api here.
+  const dashboardDir = resolveDashboardDir();
+  if (dashboardDir) {
+    await app.register(fastifyStatic, {
+      root: dashboardDir,
+      prefix: '/dashboard/',
+      decorateReply: false,
+    });
+
+    // SPA fallback — any /dashboard/* path that isn't a static file serves
+    // index.html so React Router can handle the route client-side.
+    app.setNotFoundHandler(async (req, reply) => {
+      if (req.url.startsWith('/dashboard')) {
+        return reply.sendFile('index.html', dashboardDir);
+      }
+      reply.code(404).send({ error: 'not_found' });
+    });
+
+    app.log.info(`Serving dashboard SPA from ${dashboardDir}`);
+  } else {
+    app.log.info('No dashboard build found; SPA served externally (dev mode)');
+  }
+
   return app;
+}
+
+function resolveDashboardDir(): string | null {
+  // In Docker runtime: /app/web/dist. In local dev (tsx): repo-root/web/dist.
+  // Resolve relative to this module's location, then up to repo root.
+  const __dirname = dirname(fileURLToPath(import.meta.url));
+  // From src/server.ts (dev) or dist/server.js (prod), repo root is one level up.
+  const candidates = [
+    resolve(__dirname, '../web/dist'),
+    resolve(__dirname, '../../web/dist'),
+  ];
+  for (const c of candidates) {
+    if (existsSync(resolve(c, 'index.html'))) return c;
+  }
+  return null;
 }
