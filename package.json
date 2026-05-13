@@ -1,0 +1,28 @@
+{
+  "name": "lead-management-bot",
+  "version": "0.1.0",
+  "description": "WhatsApp AI lead-qualification bot (Phase 1)",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@google/genai": "^0.7.0",
+    "better-sqlite3": "^11.5.0",
+    "dotenv": "^16.4.5",
+    "fastify": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
