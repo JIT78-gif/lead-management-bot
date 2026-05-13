@@ -57,14 +57,14 @@ export async function buildServer() {
     await app.register(fastifyStatic, {
       root: dashboardDir,
       prefix: '/dashboard/',
-      decorateReply: false,
+      // decorateReply defaults to true — needed so reply.sendFile() works below
     });
 
     // SPA fallback — any /dashboard/* path that isn't a static file serves
     // index.html so React Router can handle the route client-side.
-    app.setNotFoundHandler(async (req, reply) => {
+    app.setNotFoundHandler((req, reply) => {
       if (req.url.startsWith('/dashboard')) {
-        return reply.sendFile('index.html', dashboardDir);
+        return reply.sendFile('index.html');
       }
       reply.code(404).send({ error: 'not_found' });
     });
