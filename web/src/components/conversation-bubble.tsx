@@ -76,16 +76,40 @@ export default function Conversation({ messages }: { messages: Message[] }) {
 function Bubble({ message }: { message: Message }) {
   const isCustomer = message.direction === 'in';
 
+  // Customer (inbound) bubbles use a theme-aware accent tint:
+  //   light mode → pale peach background + dark text
+  //   dark mode  → dark surface + warm orange tint + light text
+  // color-mix lets one formula serve both themes by blending the accent into
+  // the current surface variable.
+  const customerStyle = isCustomer
+    ? {
+        background: 'color-mix(in oklab, var(--color-accent) 14%, var(--surface-1))',
+        color: 'var(--ink)',
+        border:
+          '1px solid color-mix(in oklab, var(--color-accent) 28%, transparent)',
+      }
+    : undefined;
+
+  const customerAvatarStyle = isCustomer
+    ? {
+        background:
+          'color-mix(in oklab, var(--color-accent) 18%, var(--surface-1))',
+        color: 'var(--color-accent)',
+      }
+    : undefined;
+
   return (
     <li
       className={`flex gap-2.5 ${isCustomer ? 'flex-row-reverse' : 'flex-row'}`}
     >
       <div
         className="grid h-7 w-7 shrink-0 place-items-center rounded-full"
-        style={{
-          background: isCustomer ? 'var(--color-accent-soft)' : 'var(--surface-2)',
-          color: isCustomer ? 'var(--color-accent)' : 'var(--ink-3)',
-        }}
+        style={
+          customerAvatarStyle ?? {
+            background: 'var(--surface-2)',
+            color: 'var(--ink-3)',
+          }
+        }
       >
         {isCustomer ? (
           <User className="h-3.5 w-3.5" strokeWidth={2.25} />
@@ -101,17 +125,9 @@ function Bubble({ message }: { message: Message }) {
               ? 'rounded-tr-xs'
               : 'rounded-tl-xs border border-border bg-surface-1'
           }`}
-          style={
-            isCustomer
-              ? {
-                  background: 'var(--color-accent-soft)',
-                  color: 'var(--ink)',
-                  border: '1px solid color-mix(in oklab, var(--color-accent) 18%, transparent)',
-                }
-              : undefined
-          }
+          style={customerStyle}
         >
-          <p className="whitespace-pre-wrap break-words">{message.text}</p>
+          <p className="whitespace-pre-wrap wrap-break-word">{message.text}</p>
         </div>
         <span className="mt-1 text-[10px] font-mono text-ink-4 tabular">
           {formatTime(message.created_at)}

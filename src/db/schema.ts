@@ -36,4 +36,29 @@ CREATE TABLE IF NOT EXISTS leads (
 
 CREATE INDEX IF NOT EXISTS idx_leads_status   ON leads(status);
 CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
+
+CREATE TABLE IF NOT EXISTS calls (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone                TEXT NOT NULL,
+  audio_path           TEXT NOT NULL,
+  audio_size_bytes     INTEGER NOT NULL,
+  duration_seconds     INTEGER,
+  mime_type            TEXT NOT NULL,
+  status               TEXT NOT NULL DEFAULT 'processing',
+  error                TEXT,
+  transcript           TEXT,
+  summary              TEXT,
+  verdict              TEXT,
+  verdict_confidence   REAL,
+  verdict_reasoning    TEXT,
+  key_points           TEXT,
+  objections           TEXT,
+  action_items         TEXT,
+  created_at           INTEGER NOT NULL,
+  analyzed_at          INTEGER,
+  FOREIGN KEY (phone) REFERENCES leads(phone)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calls_phone   ON calls(phone);
+CREATE INDEX IF NOT EXISTS idx_calls_verdict ON calls(verdict);
 `;

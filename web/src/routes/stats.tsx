@@ -3,13 +3,17 @@ import {
   Sparkle,
   PhoneOutgoing,
   Flame,
+  Sun,
   Snowflake,
   Trophy,
   XCircle,
+  Mic,
   type LucideIcon,
 } from 'lucide-react';
 import { statsApi, type DashboardStats, type LeadStatus } from '../lib/api.ts';
 import { titleCase } from '../lib/format.ts';
+
+type CallVerdict = 'hot' | 'warm' | 'cold' | 'not_interested';
 
 export default function StatsRoute() {
   const { data, isLoading, isError } = useQuery({
@@ -96,6 +100,48 @@ function StatsView({ stats }: { stats: DashboardStats }) {
           <IndustryBars items={stats.top_industries} />
         )}
       </Section>
+
+      {/* ── Calls overview ── */}
+      <Section title="Calls">
+        {stats.calls.total === 0 ? (
+          <p className="text-sm text-ink-3">
+            No calls recorded yet. Record or upload from the lead detail page.
+          </p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            <MiniStat label="Total calls" value={stats.calls.total} />
+            <MiniStat label="Analyzed" value={stats.calls.analyzed} />
+            <DurationStat
+              label="Avg duration"
+              seconds={stats.calls.avg_duration_seconds}
+            />
+          </div>
+        )}
+      </Section>
+
+      {/* ── Verdict distribution ── */}
+      {stats.calls.analyzed > 0 && (
+        <Section title="AI verdict distribution">
+          <VerdictBars
+            distribution={stats.verdict_distribution}
+            total={stats.calls.analyzed}
+          />
+        </Section>
+      )}
+
+      {/* ── Top objections ── */}
+      {stats.calls.analyzed > 0 && (
+        <Section title="Top objections heard">
+          {stats.top_objections.length === 0 ? (
+            <p className="text-sm text-ink-3">
+              No objections logged in analyzed calls yet. (Customers haven't
+              pushed back on anything — or all calls so far have been smooth.)
+            </p>
+          ) : (
+            <ObjectionBars items={stats.top_objections} />
+          )}
+        </Section>
+      )}
     </div>
   );
 }
@@ -161,6 +207,112 @@ function MiniStat({ label, value }: { label: string; value: number }) {
       <div className="mt-1.5 font-display text-3xl font-medium leading-none tracking-tight tabular">
         {value.toLocaleString('en-IN')}
       </div>
+    </div>
+  );
+}
+
+function DurationStat({ label, seconds }: { label: string; seconds: number }) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  const text = m > 0 ? `${m}m ${s}s` : `${s}s`;
+  return (
+    <div className="rounded-md border border-border bg-surface-1 p-4">
+      <div className="text-[10px] uppercase tracking-[0.2em] text-ink-3">
+        {label}
+      </div>
+      <div className="mt-1.5 flex items-baseline gap-1 font-display text-3xl font-medium leading-none tracking-tight tabular">
+        <Mic className="h-4 w-4 self-center text-ink-3" strokeWidth={2} />
+        {seconds > 0 ? text : '—'}
+      </div>
+    </div>
+  );
+}
+
+interface VerdictDef {
+  label: string;
+  Icon: LucideIcon;
+  color: string;
+}
+
+const VERDICT_DEFS: Array<{ key: CallVerdict } & VerdictDef> = [
+  { key: 'hot', label: 'Hot', Icon: Flame, color: 'var(--color-accent)' },
+  { key: 'warm', label: 'Warm', Icon: Sun, color: 'var(--color-amber)' },
+  { key: 'cold', label: 'Cold', Icon: Snowflake, color: 'var(--color-blue)' },
+  { key: 'not_interested', label: 'Not interested', Icon: XCircle, color: 'var(--ink-3)' },
+];
+
+function VerdictBars({
+  distribution,
+  total,
+}: {
+  distribution: Record<CallVerdict, number>;
+  total: number;
+}) {
+  return (
+    <div className="space-y-3">
+      {VERDICT_DEFS.map((v) => {
+        const count = distribution[v.key];
+        const pct = total > 0 ? (count / total) * 100 : 0;
+        return (
+          <div key={v.key} className="flex items-center gap-3 sm:gap-4">
+            <div className="flex w-32 shrink-0 items-center gap-2 sm:w-40">
+              <v.Icon
+                className="h-3.5 w-3.5"
+                strokeWidth={2.25}
+                style={{ color: v.color }}
+              />
+              <span className="text-sm text-ink-2">{v.label}</span>
+            </div>
+            <div className="relative h-2 flex-1 overflow-hidden rounded-xs bg-surface-2">
+              <div
+                className="absolute inset-y-0 left-0 rounded-xs transition-all duration-500"
+                style={{
+                  width: `${Math.max(pct, count > 0 ? 2 : 0)}%`,
+                  background: v.color,
+                }}
+              />
+            </div>
+            <div className="w-12 shrink-0 text-right text-sm font-mono text-ink-2 tabular">
+              {count}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ObjectionBars({
+  items,
+}: {
+  items: Array<{ objection: string; count: number }>;
+}) {
+  const max = Math.max(...items.map((i) => i.count), 1);
+  return (
+    <div className="space-y-3">
+      {items.map((item, i) => (
+        <div
+          key={item.objection}
+          className="rise-in flex items-center gap-3 sm:gap-4"
+          style={{ animationDelay: `${i * 40}ms` }}
+        >
+          <div className="w-40 shrink-0 truncate text-sm text-ink-2 sm:w-56" title={item.objection}>
+            {item.objection}
+          </div>
+          <div className="relative h-2 flex-1 overflow-hidden rounded-xs bg-surface-2">
+            <div
+              className="absolute inset-y-0 left-0 rounded-xs transition-all duration-500"
+              style={{
+                width: `${(item.count / max) * 100}%`,
+                background: 'var(--color-amber)',
+              }}
+            />
+          </div>
+          <div className="w-12 shrink-0 text-right text-sm font-mono text-ink-2 tabular">
+            {item.count}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

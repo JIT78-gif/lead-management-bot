@@ -83,7 +83,7 @@ export default function LeadsListRoute() {
               <button
                 key={f.value}
                 onClick={() => setFilter(f.value)}
-                className={`shrink-0 rounded-sm px-3 py-1.5 text-xs font-medium transition-colors ${
+                className={`inline-flex h-11 shrink-0 items-center rounded-sm px-3.5 text-xs font-medium transition-colors sm:h-8 sm:px-3 ${
                   active
                     ? 'bg-ink text-paper'
                     : 'bg-surface-2 text-ink-2 hover:bg-border'
@@ -109,7 +109,7 @@ export default function LeadsListRoute() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search name, industry…"
-            className="w-full rounded-sm border border-border bg-surface-1 py-2 pl-9 pr-3 text-sm placeholder:text-ink-4 focus:border-ink focus:outline-none"
+            className="h-11 w-full rounded-sm border border-border bg-surface-1 pl-9 pr-3 text-[15px] placeholder:text-ink-4 focus:border-ink focus:outline-none sm:h-9 sm:text-sm"
           />
         </div>
       </div>
@@ -156,15 +156,7 @@ function LeadCard({ lead }: { lead: Lead }) {
         />
       )}
 
-      {/* Full-card link overlay — makes the whole card tappable to detail.
-          Sits beneath interactive elements via z-index. */}
-      <Link
-        to={`/lead/${lead.phone}`}
-        aria-label={`Open ${name}`}
-        className="absolute inset-0 z-0"
-      />
-
-      <div className="relative z-10 grid gap-4 p-5 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-6">
+      <div className="grid gap-4 p-5 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-6">
         <div className="min-w-0">
           <div className="mb-2 flex items-center gap-3">
             <StatusBadge status={lead.status} size="sm" />
@@ -225,6 +217,15 @@ function LeadCard({ lead }: { lead: Lead }) {
           Call
         </a>
       </div>
+
+      {/* Full-card link overlay — last child so it sits ON TOP of the card
+          body and intercepts taps anywhere. Interactive elements above
+          (z-20 Call button + external links) stay clickable. */}
+      <Link
+        to={`/lead/${lead.phone}`}
+        aria-label={`Open ${name}`}
+        className="absolute inset-0 z-10"
+      />
     </article>
   );
 }

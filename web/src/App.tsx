@@ -85,7 +85,7 @@ function TabLink({
       to={to}
       end={end}
       className={({ isActive }) =>
-        `inline-flex h-9 items-center rounded-sm px-3 text-sm transition-colors ${
+        `inline-flex h-11 items-center rounded-sm px-3 text-sm transition-colors sm:h-9 ${
           isActive
             ? 'bg-surface-2 font-medium text-ink'
             : 'text-ink-3 hover:bg-surface-2 hover:text-ink'

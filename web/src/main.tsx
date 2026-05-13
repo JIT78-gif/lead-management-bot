@@ -20,6 +20,15 @@ const queryClient = new QueryClient({
   },
 });
 
+// When any API call returns 401 mid-session, bounce to login.
+window.addEventListener('unauthenticated', () => {
+  queryClient.clear();
+  // Only redirect if we're not already on the login page (avoid loop).
+  if (!window.location.pathname.endsWith('/dashboard/login')) {
+    window.location.assign('/dashboard/login');
+  }
+});
+
 // Initialise theme from system preference before first paint
 const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
 const stored = localStorage.getItem('theme');

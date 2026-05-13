@@ -37,6 +37,17 @@ export const config = {
     password: required('DASHBOARD_PASSWORD'),
     sessionSecret: requireMinLength('SESSION_SECRET', 32),
   },
+
+  audio: {
+    dir: optional('AUDIO_DIR', './data/audio'),
+    maxBytes: Number(optional('MAX_AUDIO_BYTES', '104857600')), // 100 MB
+  },
+
+  autoUpload: {
+    // Shared token for the salesperson's phone automation app
+    // (e.g. Automate / MacroDroid). Rotate to revoke access.
+    token: requireMinLength('AUTO_UPLOAD_TOKEN', 24),
+  },
 } as const;
 
 function requireMinLength(name: string, minLength: number): string {

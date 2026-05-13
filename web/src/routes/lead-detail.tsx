@@ -18,6 +18,8 @@ import { formatPhone, timeAgo, titleCase } from '../lib/format.ts';
 import StatusBadge from '../components/status-badge.tsx';
 import StatusSelect from '../components/status-select.tsx';
 import Conversation from '../components/conversation-bubble.tsx';
+import CallUploader from '../components/call-uploader.tsx';
+import CallsList from '../components/calls-list.tsx';
 
 export default function LeadDetailRoute() {
   const { phone = '' } = useParams<{ phone: string }>();
@@ -104,7 +106,7 @@ export default function LeadDetailRoute() {
       <button
         type="button"
         onClick={() => navigate(-1)}
-        className="-ml-2 inline-flex items-center gap-1.5 rounded-sm px-2 py-1.5 text-sm text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink"
+        className="-ml-2 inline-flex h-11 items-center gap-1.5 rounded-sm px-3 text-sm text-ink-3 transition-colors hover:bg-surface-2 hover:text-ink sm:h-9 sm:px-2"
       >
         <ArrowLeft className="h-4 w-4" strokeWidth={2.25} />
         Back to leads
@@ -220,8 +222,21 @@ export default function LeadDetailRoute() {
         Call {lead.name || 'lead'}
       </a>
 
+      {/* ── Calls (Phase 3) ── */}
+      <Section label="Calls" className="mt-10">
+        <div className="mb-3">
+          <CallUploader phone={lead.phone} />
+        </div>
+        <p className="mb-5 text-[12px] leading-snug text-ink-3">
+          Use your phone's built-in call recorder to capture the call, then
+          tap above to upload after you hang up. The AI runs in 10–30 seconds
+          and adds the summary + verdict to this lead automatically.
+        </p>
+        <CallsList phone={lead.phone} />
+      </Section>
+
       {/* ── Conversation transcript ── */}
-      <Section label="Conversation" className="mt-10">
+      <Section label="WhatsApp conversation" className="mt-10">
         <Conversation messages={messages} />
       </Section>
 

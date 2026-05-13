@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cookie from '@fastify/cookie';
 import secureSession from '@fastify/secure-session';
 import fastifyStatic from '@fastify/static';
+import fastifyMultipart from '@fastify/multipart';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
@@ -11,6 +12,8 @@ import { webhookRoutes } from './routes/webhook.js';
 import { authRoutes } from './routes/auth.js';
 import { leadsRoutes } from './routes/leads.js';
 import { statsRoutes } from './routes/stats.js';
+import { callsRoutes } from './routes/calls.js';
+import { autoUploadRoutes } from './routes/auto-upload.js';
 
 declare module '@fastify/secure-session' {
   interface SessionData {
@@ -45,10 +48,20 @@ export async function buildServer() {
     },
   });
 
+  await app.register(fastifyMultipart, {
+    limits: {
+      fileSize: config.audio.maxBytes,
+      files: 1,
+      fields: 4,
+    },
+  });
+
   await app.register(webhookRoutes);
   await app.register(authRoutes);
   await app.register(leadsRoutes);
   await app.register(statsRoutes);
+  await app.register(callsRoutes);
+  await app.register(autoUploadRoutes);
 
   // Serve the built React dashboard under /dashboard/* in production. In dev,
   // Vite runs the SPA on a separate port and proxies /api here.
