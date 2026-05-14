@@ -48,6 +48,21 @@ export const config = {
     // (e.g. Automate / MacroDroid). Rotate to revoke access.
     token: requireMinLength('AUTO_UPLOAD_TOKEN', 24),
   },
+
+  notify: {
+    // Comma-separated list of WhatsApp numbers (with country code, no +)
+    // who should receive a notification when a new lead qualifies.
+    // E.g. "919876543210,919876543211". Leave empty to disable.
+    salespersonPhones: optional('SALESPERSON_PHONES', '')
+      .split(',')
+      .map((s) => s.trim().replace(/\D/g, ''))
+      .filter((s) => s.length >= 8),
+    // Public dashboard URL used in notification deep links.
+    dashboardUrl: optional(
+      'DASHBOARD_PUBLIC_URL',
+      'https://whatsapp.botifys.com'
+    ),
+  },
 } as const;
 
 function requireMinLength(name: string, minLength: number): string {

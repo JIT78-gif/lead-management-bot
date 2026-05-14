@@ -10,6 +10,7 @@ import {
   updateConversation,
   type ConversationState,
 } from '../services/leads.js';
+import { notifySalesteam } from '../services/notify.js';
 
 const FALLBACK_REPLY =
   "One sec — I'm having a small issue. Could you please send your message again?";
@@ -121,6 +122,9 @@ async function processMessage(
   } else if (turn.action === 'QUALIFY_AND_SAVE') {
     nextState = 'qualified';
     saveQualifiedLead(msg.phone, turn.data);
+    // Fire-and-forget: notify each salesperson on WhatsApp. Don't block the
+    // bot's reply on this — failures (e.g. closed 24h window) are logged.
+    notifySalesteam(msg.phone, turn.data, log).catch(() => {});
   } else {
     // ASK_NEXT — still collecting.
     nextState = 'collecting';
