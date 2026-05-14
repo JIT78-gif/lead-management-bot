@@ -60,6 +60,12 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/healthz', async () => ({ ok: true }));
+
+  // Bare domain → dashboard. Lets users type whatsapp.botifys.com and land
+  // on the login page without having to remember /dashboard/login.
+  app.get('/', async (_req, reply) => {
+    reply.redirect('/dashboard/', 302);
+  });
 }
 
 async function processMessage(
