@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS leads (
   status                   TEXT NOT NULL DEFAULT 'new_qualified',
   notes                    TEXT,
   last_status_change_at    INTEGER,
+  last_contact_at          INTEGER,
   created_at               INTEGER NOT NULL,
   updated_at               INTEGER NOT NULL,
   FOREIGN KEY (phone) REFERENCES conversations(phone)
@@ -61,4 +62,18 @@ CREATE TABLE IF NOT EXISTS calls (
 
 CREATE INDEX IF NOT EXISTS idx_calls_phone   ON calls(phone);
 CREATE INDEX IF NOT EXISTS idx_calls_verdict ON calls(verdict);
+
+-- Phase 5: cache for AI artifacts (coaching, pre-call brief, weekly digest,
+-- win-pattern). One row per (kind, ref_key). expires_at NULL = never expires.
+CREATE TABLE IF NOT EXISTS ai_artifacts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind        TEXT NOT NULL,
+  ref_key     TEXT NOT NULL,
+  content     TEXT NOT NULL,
+  created_at  INTEGER NOT NULL,
+  expires_at  INTEGER,
+  UNIQUE(kind, ref_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_artifacts_kind ON ai_artifacts(kind);
 `;

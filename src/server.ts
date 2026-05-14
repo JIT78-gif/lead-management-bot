@@ -15,6 +15,7 @@ import { statsRoutes } from './routes/stats.js';
 import { callsRoutes } from './routes/calls.js';
 import { autoUploadRoutes } from './routes/auto-upload.js';
 import { legalRoutes } from './routes/legal.js';
+import { insightsRoutes } from './routes/insights.js';
 
 declare module '@fastify/secure-session' {
   interface SessionData {
@@ -64,6 +65,7 @@ export async function buildServer() {
   await app.register(callsRoutes);
   await app.register(autoUploadRoutes);
   await app.register(legalRoutes);
+  await app.register(insightsRoutes);
 
   // Serve the built React dashboard under /dashboard/* in production. In dev,
   // Vite runs the SPA on a separate port and proxies /api here.

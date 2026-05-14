@@ -99,18 +99,12 @@ function TabLink({
 
 function Logo() {
   return (
-    <svg
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      className="text-ink"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      aria-hidden="true"
-    >
-      <rect x="1.5" y="1.5" width="21" height="21" rx="4" stroke="currentColor" strokeWidth="1.5" />
-      <path d="M7 7h6a3 3 0 0 1 0 6H7V7z" fill="currentColor" />
-      <path d="M7 13h7a3 3 0 0 1 0 6H7v-6z" fill="currentColor" opacity="0.55" />
-    </svg>
+    <img
+      src="/dashboard/icon.png"
+      width={28}
+      height={28}
+      alt="Botify"
+      className="h-7 w-7 rounded-full"
+    />
   );
 }

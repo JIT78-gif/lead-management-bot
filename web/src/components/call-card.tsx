@@ -16,6 +16,7 @@ import { callsApi, parseJsonArray, type Call } from '../lib/api.ts';
 import { timeAgo } from '../lib/format.ts';
 import VerdictBadge from './verdict-badge.tsx';
 import AudioPlayer from './audio-player.tsx';
+import CoachingCard from './coaching-card.tsx';
 
 function formatDuration(s: number | null): string {
   if (!s || s < 1) return '—';
@@ -249,6 +250,9 @@ export default function CallCard({ call }: { call: Call }) {
               </pre>
             </SectionBlock>
           )}
+
+          {/* Private AI coaching — Phase 5 */}
+          <CoachingCard callId={call.id} enabled={call.status === 'analyzed'} />
 
           {/* Actions row */}
           <div className="mt-6 flex flex-wrap items-center gap-2">

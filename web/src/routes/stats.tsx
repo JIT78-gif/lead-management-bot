@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { statsApi, type DashboardStats, type LeadStatus } from '../lib/api.ts';
 import { titleCase } from '../lib/format.ts';
+import WinPatternSection from '../components/win-pattern-section.tsx';
 
 type CallVerdict = 'hot' | 'warm' | 'cold' | 'not_interested';
 
@@ -142,6 +143,9 @@ function StatsView({ stats }: { stats: DashboardStats }) {
           )}
         </Section>
       )}
+
+      {/* Phase 5 — win-pattern analysis */}
+      <WinPatternSection />
     </div>
   );
 }

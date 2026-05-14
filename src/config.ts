@@ -64,6 +64,15 @@ export const config = {
     ),
   },
 
+  scheduler: {
+    // Phase 5. Set false in local dev to keep cron quiet.
+    enabled: optional('SCHEDULER_ENABLED', 'true').toLowerCase() === 'true',
+    digestHourIst: Number(optional('DIGEST_HOUR_IST', '9')),
+    reminderHourIst: Number(optional('REMINDER_HOUR_IST', '9')),
+    // Defaults to ALERT_EMAIL if unset.
+    digestRecipient: optional('DIGEST_RECIPIENT', ''),
+  },
+
   alerts: {
     // Resend API key (https://resend.com — free 3,000 emails/month).
     // Leave empty to disable email alerts.

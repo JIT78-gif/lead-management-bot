@@ -20,6 +20,7 @@ import StatusSelect from '../components/status-select.tsx';
 import Conversation from '../components/conversation-bubble.tsx';
 import CallUploader from '../components/call-uploader.tsx';
 import CallsList from '../components/calls-list.tsx';
+import PrecallBriefBanner from '../components/precall-brief.tsx';
 
 export default function LeadDetailRoute() {
   const { phone = '' } = useParams<{ phone: string }>();
@@ -112,8 +113,13 @@ export default function LeadDetailRoute() {
         Back to leads
       </button>
 
+      {/* ── Pre-call brief (Phase 5) ── */}
+      <div className="mt-4">
+        <PrecallBriefBanner phone={lead.phone} />
+      </div>
+
       {/* ── Lead identity card ── */}
-      <article className="mt-4 overflow-hidden rounded-md border border-border bg-surface-1">
+      <article className="overflow-hidden rounded-md border border-border bg-surface-1">
         {lead.status === 'hot' && (
           <div
             aria-hidden

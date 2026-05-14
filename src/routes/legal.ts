@@ -124,11 +124,7 @@ function page(title: string, body: string): string {
   <div class="wrap">
     <header class="brand">
       <a href="/">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <rect x="1.5" y="1.5" width="21" height="21" rx="4" stroke="currentColor" stroke-width="1.5"/>
-          <path d="M7 7h6a3 3 0 0 1 0 6H7V7z" fill="currentColor"/>
-          <path d="M7 13h7a3 3 0 0 1 0 6H7v-6z" fill="currentColor" opacity="0.55"/>
-        </svg>
+        <img src="/dashboard/icon.png" width="26" height="26" alt="Botify" style="border-radius:50%;" />
         <div>
           <div class="name">${BUSINESS_NAME}</div>
           <div class="tag">Lead Desk · ${COUNTRY}</div>

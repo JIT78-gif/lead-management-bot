@@ -57,15 +57,20 @@ export default function LoginRoute() {
         />
 
         <div className="relative max-w-md fade-in">
+          <img
+            src="/dashboard/logo.png"
+            alt="Botify"
+            className="mb-3 h-9 w-auto md:h-11"
+          />
           <div
-            className="mb-5 flex items-center gap-2 text-[11px] uppercase tracking-[0.22em]"
+            className="mb-8 flex items-center gap-2 text-[11px] uppercase tracking-[0.22em]"
             style={{ color: 'rgba(250,250,250,0.55)' }}
           >
             <span
               className="inline-block h-1.5 w-1.5 rounded-full"
               style={{ background: '#ff4d2e' }}
             />
-            Botifys · Lead Desk
+            Lead Desk · India
           </div>
           <h1 className="font-display text-[44px] font-medium leading-[1.05] tracking-tight md:text-[56px] lg:text-[68px]">
             Every lead.

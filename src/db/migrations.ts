@@ -29,4 +29,14 @@ function addColumnIfMissing(
 export function runMigrations(db: Database.Database): void {
   addColumnIfMissing(db, 'leads', 'notes', 'TEXT');
   addColumnIfMissing(db, 'leads', 'last_status_change_at', 'INTEGER');
+
+  // Phase 5
+  addColumnIfMissing(db, 'leads', 'last_contact_at', 'INTEGER');
+
+  // Backfill last_contact_at for existing leads so the daily-reminder query
+  // doesn't treat the entire backlog as "never contacted". Use updated_at as
+  // a reasonable proxy for the most-recent activity on the lead row.
+  db.exec(
+    `UPDATE leads SET last_contact_at = updated_at WHERE last_contact_at IS NULL`
+  );
 }

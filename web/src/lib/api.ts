@@ -211,6 +211,51 @@ export const callsApi = {
   delete: (id: number) => api.del<{ ok: true }>(`/api/calls/${id}`),
 };
 
+// ── Insights (Phase 5) ──
+
+export interface Coaching {
+  wins: string[];
+  improvements: string[];
+  missed_opportunity: string | null;
+  next_call_focus: string;
+}
+
+export interface PrecallBrief {
+  headline: string;
+  signals: string[];
+  objections_expected: string[];
+  opening_line: string;
+  do_not_say: string[];
+}
+
+export interface WinPattern {
+  output: {
+    duration_insight: string;
+    language_patterns: string[];
+    industries_strong: Array<{ name: string; win_rate: number }>;
+    industries_weak: Array<{ name: string; loss_rate: number }>;
+    recommendations: string[];
+  };
+  corpus_size: number;
+  enough_data: boolean;
+  generated_at: number;
+}
+
+export const insightsApi = {
+  getCoaching: (callId: number) =>
+    api.get<{ coaching: Coaching | null }>(`/api/calls/${callId}/coaching`),
+  refreshCoaching: (callId: number) =>
+    api.post<{ coaching: Coaching | null }>(`/api/calls/${callId}/coaching/refresh`),
+
+  getPrecallBrief: (phone: string) =>
+    api.get<{ brief: PrecallBrief | null }>(`/api/leads/${phone}/precall-brief`),
+  refreshPrecallBrief: (phone: string) =>
+    api.post<{ brief: PrecallBrief | null }>(`/api/leads/${phone}/precall-brief/refresh`),
+
+  getWinPattern: () => api.get<WinPattern>('/api/insights/win-pattern'),
+  refreshWinPattern: () => api.post<WinPattern>('/api/insights/win-pattern/refresh'),
+};
+
 /** Parse a JSON-encoded array column. Returns [] for null/invalid. */
 export function parseJsonArray(raw: string | null): string[] {
   if (!raw) return [];
