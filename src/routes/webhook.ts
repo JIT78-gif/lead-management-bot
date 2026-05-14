@@ -37,13 +37,17 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   // Meta delivers all WhatsApp events here (incoming messages, statuses, etc).
   // ACK immediately so Meta doesn't retry; process the message async.
   app.post('/webhook', (req, reply) => {
+    // TEMP DEBUG: dump raw body so we can see what Meta is actually sending.
+    app.log.info({ body: req.body }, 'webhook body received');
+
     reply.code(200).send('OK');
 
     setImmediate(() => {
       try {
         const incoming = parseIncomingWebhook(req.body);
+        app.log.info({ parsedCount: incoming.length }, 'webhook parsed');
         for (const msg of incoming) {
-          processMessage(msg).catch((err) => {
+          processMessage(msg, app.log).catch((err) => {
             app.log.error({ err, phone: msg.phone }, 'processMessage failed');
           });
         }
@@ -56,28 +60,46 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   app.get('/healthz', async () => ({ ok: true }));
 }
 
-async function processMessage(msg: {
-  phone: string;
-  whatsappName: string | null;
-  text: string;
-  metaMessageId: string;
-}): Promise<void> {
+async function processMessage(
+  msg: {
+    phone: string;
+    whatsappName: string | null;
+    text: string;
+    metaMessageId: string;
+  },
+  log: import('fastify').FastifyBaseLogger
+): Promise<void> {
+  log.info(
+    { phone: msg.phone, text: msg.text, metaId: msg.metaMessageId },
+    'processMessage start'
+  );
+
   // Ensure conversation exists.
   const conv = getOrCreateConversation(msg.phone, msg.whatsappName);
+  log.info({ phone: msg.phone, state: conv.state }, 'conversation state');
 
   // Idempotency: if we've already seen this Meta message id, skip the whole turn.
   const isNew = appendMessage(msg.phone, 'in', msg.text, msg.metaMessageId);
-  if (!isNew) return;
+  if (!isNew) {
+    log.info({ phone: msg.phone, metaId: msg.metaMessageId }, 'duplicate webhook, silent skip');
+    return;
+  }
 
   // Disqualified leads are silent. Don't burn Gemini calls on them.
-  if (conv.state === 'disqualified') return;
+  if (conv.state === 'disqualified') {
+    log.info({ phone: msg.phone }, 'conversation disqualified, silent skip');
+    return;
+  }
 
   // Already-qualified leads get one reassurance line, no flow restart.
   if (conv.state === 'qualified') {
+    log.info({ phone: msg.phone }, 'conversation qualified, sending ack');
     const ack = "Thanks! Our team will be in touch soon.";
     await sendAndLog(msg.phone, ack);
     return;
   }
+
+  log.info({ phone: msg.phone, state: conv.state }, 'running Gemini turn');
 
   // Build conversation history (only customer-visible turns, no the just-inserted
   // inbound message gets included automatically by listMessages).
@@ -106,9 +128,15 @@ async function processMessage(msg: {
 
   updateConversation(msg.phone, nextState, turn.data, msg.whatsappName);
 
+  log.info(
+    { phone: msg.phone, action: turn.action, nextState, replyLen: turn.reply?.length ?? 0 },
+    'Gemini turn complete'
+  );
+
   // Send the reply (skip if intentionally empty — e.g. silent after disqualify).
   if (turn.reply && turn.reply.trim() !== '') {
     await sendAndLog(msg.phone, turn.reply);
+    log.info({ phone: msg.phone }, 'reply sent successfully');
   }
 }
 
