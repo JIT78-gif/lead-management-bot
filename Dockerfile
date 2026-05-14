@@ -33,6 +33,7 @@ RUN npm install
 COPY web/tsconfig.json web/tsconfig.app.json web/tsconfig.node.json ./
 COPY web/vite.config.ts web/index.html ./
 COPY web/src ./src
+COPY web/public ./public
 RUN npm run build
 
 # ──────────────────────────────────────────────
