@@ -11,6 +11,7 @@ import {
   type ConversationState,
 } from '../services/leads.js';
 import { notifySalesteam } from '../services/notify.js';
+import { sendAlert, leadFailureAlert } from '../services/alert.js';
 
 const FALLBACK_REPLY =
   "One sec — I'm having a small issue. Could you please send your message again?";
@@ -111,7 +112,21 @@ async function processMessage(
     turn = await runTurn(history, msg.whatsappName ?? conv.whatsapp_name, conv.state);
   } catch (err) {
     // Gemini fully failed (twice) — apologise so the customer isn't stranded.
-    await sendAndLog(msg.phone, FALLBACK_REPLY);
+    await sendAndLog(msg.phone, FALLBACK_REPLY).catch(() => {});
+
+    // Alert the owner so they can take over manually before the customer bounces.
+    sendAlert(
+      leadFailureAlert({
+        reason: 'gemini_failed',
+        customerPhone: msg.phone,
+        customerName: msg.whatsappName ?? conv.whatsapp_name,
+        customerLastMessage: msg.text,
+        conversationState: conv.state,
+        errorMessage: err instanceof Error ? err.message : String(err),
+      }),
+      log
+    );
+
     throw err;
   }
 
@@ -139,8 +154,24 @@ async function processMessage(
 
   // Send the reply (skip if intentionally empty — e.g. silent after disqualify).
   if (turn.reply && turn.reply.trim() !== '') {
-    await sendAndLog(msg.phone, turn.reply);
-    log.info({ phone: msg.phone }, 'reply sent successfully');
+    try {
+      await sendAndLog(msg.phone, turn.reply);
+      log.info({ phone: msg.phone }, 'reply sent successfully');
+    } catch (err) {
+      // Meta rejected the send. The customer got nothing. Alert the owner.
+      sendAlert(
+        leadFailureAlert({
+          reason: 'send_failed',
+          customerPhone: msg.phone,
+          customerName: msg.whatsappName ?? conv.whatsapp_name,
+          customerLastMessage: msg.text,
+          conversationState: nextState,
+          errorMessage: err instanceof Error ? err.message : String(err),
+        }),
+        log
+      );
+      throw err;
+    }
   }
 }
 

@@ -63,6 +63,18 @@ export const config = {
       'https://whatsapp.botifys.com'
     ),
   },
+
+  alerts: {
+    // Resend API key (https://resend.com — free 3,000 emails/month).
+    // Leave empty to disable email alerts.
+    resendApiKey: optional('RESEND_API_KEY', ''),
+    // Email address that should receive error alerts.
+    toEmail: optional('ALERT_EMAIL', ''),
+    // Sender. Default works out of the box but only delivers to the email
+    // attached to your Resend account. For production, verify your own
+    // domain in Resend and set this to alerts@yourdomain.com.
+    fromEmail: optional('ALERT_FROM_EMAIL', 'onboarding@resend.dev'),
+  },
 } as const;
 
 function requireMinLength(name: string, minLength: number): string {
