@@ -178,6 +178,33 @@ export function listMessages(phone: string): MessageRow[] {
   return stmtListMessages.all(phone) as MessageRow[];
 }
 
+/**
+ * Wipe everything we know about a phone number — conversation state,
+ * messages, lead row. The next inbound message creates a fresh conversation
+ * so the bot starts the qualifying flow from scratch. Useful when a customer
+ * was disqualified by mistake, or for resetting your own test number.
+ */
+const stmtDeleteCallsByPhone = db.prepare<[string]>('DELETE FROM calls WHERE phone = ?');
+const stmtDeleteMessagesByPhone = db.prepare<[string]>('DELETE FROM messages WHERE phone = ?');
+const stmtDeleteLeadByPhone = db.prepare<[string]>('DELETE FROM leads WHERE phone = ?');
+const stmtDeleteConversationByPhone = db.prepare<[string]>('DELETE FROM conversations WHERE phone = ?');
+
+export function resetConversation(phone: string): {
+  conversation: number;
+  messages: number;
+  lead: number;
+  calls: number;
+} {
+  const tx = db.transaction((p: string) => {
+    const calls = stmtDeleteCallsByPhone.run(p).changes;
+    const messages = stmtDeleteMessagesByPhone.run(p).changes;
+    const lead = stmtDeleteLeadByPhone.run(p).changes;
+    const conversation = stmtDeleteConversationByPhone.run(p).changes;
+    return { conversation, messages, lead, calls };
+  });
+  return tx(phone);
+}
+
 export function saveQualifiedLead(phone: string, data: LeadData): void {
   const ts = now();
   stmtUpsertLead.run({

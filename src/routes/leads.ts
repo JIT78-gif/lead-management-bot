@@ -6,6 +6,7 @@ import {
   getLead,
   listLeads,
   listMessages,
+  resetConversation,
   updateLead,
   type LeadStatus,
 } from '../services/leads.js';
@@ -82,5 +83,16 @@ export async function leadsRoutes(app: FastifyInstance): Promise<void> {
       return reply.code(404).send({ error: 'not_found' });
     }
     return { lead: updated };
+  });
+
+  // Wipe everything we know about a phone — conversation, messages, lead, calls.
+  // Next inbound message starts the qualifying flow from scratch.
+  app.delete('/api/conversations/:phone', async (req, reply) => {
+    const parsed = PhoneParam.safeParse(req.params);
+    if (!parsed.success) {
+      return reply.code(400).send({ error: 'invalid_phone' });
+    }
+    const deleted = resetConversation(parsed.data.phone);
+    return { ok: true, deleted };
   });
 }
