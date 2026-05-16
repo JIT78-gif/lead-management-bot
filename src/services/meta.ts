@@ -9,6 +9,16 @@ export interface IncomingMessage {
   metaMessageId: string;
 }
 
+export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
+
+export interface StatusUpdate {
+  metaMessageId: string;
+  status: DeliveryStatus;
+  errorCode: number | null;
+  errorMessage: string | null;
+  timestampMs: number;
+}
+
 /**
  * Send a plain-text WhatsApp message to a phone number.
  * Returns the Meta-issued message ID on success, throws on failure.
@@ -84,6 +94,63 @@ export function parseIncomingWebhook(body: unknown): IncomingMessage[] {
           whatsappName: profileNameByPhone.get(m.from) ?? null,
           text: m.text.body,
           metaMessageId: m.id,
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
+const VALID_STATUSES: ReadonlySet<DeliveryStatus> = new Set<DeliveryStatus>([
+  'sent',
+  'delivered',
+  'read',
+  'failed',
+]);
+
+/**
+ * Extract message delivery status updates from a Meta webhook POST body.
+ * Meta posts these alongside (or instead of) inbound messages. We use them
+ * to keep the dashboard's outbound-message ticks honest.
+ */
+export function parseIncomingStatuses(body: unknown): StatusUpdate[] {
+  const result: StatusUpdate[] = [];
+  const entries = (body as { entry?: unknown[] })?.entry;
+  if (!Array.isArray(entries)) return result;
+
+  for (const entry of entries) {
+    const changes = (entry as { changes?: unknown[] })?.changes;
+    if (!Array.isArray(changes)) continue;
+
+    for (const change of changes) {
+      const value = (change as { value?: unknown })?.value as
+        | {
+            statuses?: Array<{
+              id?: string;
+              status?: string;
+              timestamp?: string;
+              errors?: Array<{ code?: number; message?: string; title?: string }>;
+            }>;
+          }
+        | undefined;
+
+      if (!value?.statuses) continue;
+
+      for (const s of value.statuses) {
+        if (!s.id || !s.status) continue;
+        if (!VALID_STATUSES.has(s.status as DeliveryStatus)) continue;
+        const err = s.errors?.[0];
+        const tsSec = Number(s.timestamp);
+        const timestampMs = Number.isFinite(tsSec) && tsSec > 0
+          ? tsSec * 1000
+          : Date.now();
+        result.push({
+          metaMessageId: s.id,
+          status: s.status as DeliveryStatus,
+          errorCode: err?.code ?? null,
+          errorMessage: err?.message ?? err?.title ?? null,
+          timestampMs,
         });
       }
     }

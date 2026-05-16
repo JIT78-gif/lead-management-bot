@@ -9,12 +9,15 @@ CREATE TABLE IF NOT EXISTS conversations (
 );
 
 CREATE TABLE IF NOT EXISTS messages (
-  id               INTEGER PRIMARY KEY AUTOINCREMENT,
-  phone            TEXT NOT NULL,
-  direction        TEXT NOT NULL,
-  text             TEXT NOT NULL,
-  meta_message_id  TEXT UNIQUE,
-  created_at       INTEGER NOT NULL,
+  id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+  phone               TEXT NOT NULL,
+  direction           TEXT NOT NULL,
+  text                TEXT NOT NULL,
+  meta_message_id     TEXT UNIQUE,
+  delivery_status     TEXT,
+  delivery_error      TEXT,
+  status_updated_at   INTEGER,
+  created_at          INTEGER NOT NULL,
   FOREIGN KEY (phone) REFERENCES conversations(phone)
 );
 
@@ -37,6 +40,7 @@ CREATE TABLE IF NOT EXISTS leads (
 
 CREATE INDEX IF NOT EXISTS idx_leads_status   ON leads(status);
 CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
+CREATE INDEX IF NOT EXISTS idx_messages_phone_created ON messages(phone, created_at);
 
 CREATE TABLE IF NOT EXISTS calls (
   id                   INTEGER PRIMARY KEY AUTOINCREMENT,

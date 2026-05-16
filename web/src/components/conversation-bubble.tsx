@@ -1,5 +1,6 @@
 import { Bot, User } from 'lucide-react';
 import type { Message } from '../lib/api.ts';
+import DeliveryTick from './delivery-tick.tsx';
 
 function formatTime(ts: number): string {
   const d = new Date(ts);
@@ -29,7 +30,14 @@ function formatDay(ts: number): string {
  * inbound (customer) on right with a soft accent tint to draw attention.
  * Groups messages by day with subtle separators.
  */
-export default function Conversation({ messages }: { messages: Message[] }) {
+export default function Conversation({
+  messages,
+  showDeliveryStatus = false,
+}: {
+  messages: Message[];
+  /** When true, outbound bubbles render a ✓/✓✓/read/failed tick. */
+  showDeliveryStatus?: boolean;
+}) {
   if (messages.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-border bg-surface-1 p-6 text-center text-sm text-ink-3">
@@ -64,7 +72,7 @@ export default function Conversation({ messages }: { messages: Message[] }) {
 
           <ul className="space-y-2">
             {group.items.map((m, i) => (
-              <Bubble key={i} message={m} />
+              <Bubble key={i} message={m} showDeliveryStatus={showDeliveryStatus} />
             ))}
           </ul>
         </div>
@@ -73,7 +81,13 @@ export default function Conversation({ messages }: { messages: Message[] }) {
   );
 }
 
-function Bubble({ message }: { message: Message }) {
+function Bubble({
+  message,
+  showDeliveryStatus,
+}: {
+  message: Message;
+  showDeliveryStatus: boolean;
+}) {
   const isCustomer = message.direction === 'in';
 
   // Customer (inbound) bubbles use a theme-aware accent tint:
@@ -129,8 +143,14 @@ function Bubble({ message }: { message: Message }) {
         >
           <p className="whitespace-pre-wrap wrap-break-word">{message.text}</p>
         </div>
-        <span className="mt-1 text-[10px] font-mono text-ink-4 tabular">
+        <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-mono text-ink-4 tabular">
           {formatTime(message.created_at)}
+          {!isCustomer && showDeliveryStatus && (
+            <DeliveryTick
+              status={message.delivery_status}
+              error={message.delivery_error}
+            />
+          )}
         </span>
       </div>
     </li>

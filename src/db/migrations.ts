@@ -39,4 +39,12 @@ export function runMigrations(db: Database.Database): void {
   db.exec(
     `UPDATE leads SET last_contact_at = updated_at WHERE last_contact_at IS NULL`
   );
+
+  // Phase 6 — delivery status from Meta status webhooks.
+  addColumnIfMissing(db, 'messages', 'delivery_status', 'TEXT');
+  addColumnIfMissing(db, 'messages', 'delivery_error', 'TEXT');
+  addColumnIfMissing(db, 'messages', 'status_updated_at', 'INTEGER');
+  db.exec(
+    `CREATE INDEX IF NOT EXISTS idx_messages_phone_created ON messages(phone, created_at)`
+  );
 }

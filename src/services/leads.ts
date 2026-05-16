@@ -59,10 +59,15 @@ export interface LeadRow {
   updated_at: number;
 }
 
+export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
+
 export interface MessageRow {
   direction: Direction;
   text: string;
   created_at: number;
+  delivery_status?: DeliveryStatus | null;
+  delivery_error?: string | null;
+  status_updated_at?: number | null;
 }
 
 export interface ListLeadsFilters {
@@ -95,14 +100,44 @@ const stmtUpdateConversation = db.prepare(
    WHERE phone = @phone`
 );
 
+// Phase 6: outbound rows are inserted with delivery_status='sent' so the
+// dashboard can show a ✓ tick from the moment the message leaves us; the
+// status webhook later upgrades them to 'delivered' / 'read' or 'failed'.
+// Inbound rows leave delivery_status NULL (concept doesn't apply).
 const stmtInsertMessage = db.prepare(
-  `INSERT OR IGNORE INTO messages (phone, direction, text, meta_message_id, created_at)
-   VALUES (@phone, @direction, @text, @meta_message_id, @created_at)`
+  `INSERT OR IGNORE INTO messages
+     (phone, direction, text, meta_message_id, delivery_status, status_updated_at, created_at)
+   VALUES (
+     @phone,
+     @direction,
+     @text,
+     @meta_message_id,
+     CASE WHEN @direction = 'out' THEN 'sent' ELSE NULL END,
+     CASE WHEN @direction = 'out' THEN @created_at ELSE NULL END,
+     @created_at
+   )`
+);
+
+const stmtUpdateMessageStatus = db.prepare(
+  `UPDATE messages
+      SET delivery_status   = @status,
+          delivery_error    = @error,
+          status_updated_at = @ts
+    WHERE meta_message_id = @meta_message_id
+      AND direction = 'out'
+      AND (
+        delivery_status IS NULL
+        OR delivery_status = 'sent'
+        OR (delivery_status = 'delivered' AND @status IN ('read', 'failed'))
+        OR (delivery_status = 'read' AND @status = 'failed')
+      )`
 );
 
 const stmtListMessages = db.prepare<[string]>(
-  `SELECT direction, text, created_at FROM messages
-   WHERE phone = ? ORDER BY id ASC`
+  `SELECT direction, text, created_at,
+          delivery_status, delivery_error, status_updated_at
+     FROM messages
+    WHERE phone = ? ORDER BY id ASC`
 );
 
 const stmtUpsertLead = db.prepare(
@@ -176,6 +211,28 @@ export function appendMessage(
 
 export function listMessages(phone: string): MessageRow[] {
   return stmtListMessages.all(phone) as MessageRow[];
+}
+
+/**
+ * Phase 6 — Apply a Meta delivery-status update to an outbound message.
+ *
+ * Idempotent: only advances state monotonically (sent → delivered → read,
+ * or any state → failed). Older/repeated events are ignored. Returns true
+ * when a row was actually updated.
+ */
+export function applyStatusUpdate(
+  metaMessageId: string,
+  status: DeliveryStatus,
+  errorMessage: string | null,
+  timestampMs: number
+): boolean {
+  const res = stmtUpdateMessageStatus.run({
+    meta_message_id: metaMessageId,
+    status,
+    error: status === 'failed' ? errorMessage : null,
+    ts: timestampMs,
+  });
+  return res.changes > 0;
 }
 
 /**

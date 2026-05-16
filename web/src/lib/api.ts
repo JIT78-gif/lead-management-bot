@@ -89,10 +89,18 @@ export const authApi = {
   me: () => api.get<{ authenticated: boolean }>('/api/auth/me'),
 };
 
+export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
+
 export interface Message {
   direction: 'in' | 'out';
   text: string;
   created_at: number;
+  // Phase 6 — populated for outbound rows, NULL for inbound. Older outbound
+  // rows from before Phase 6 may also be NULL (we only know the truth for
+  // messages sent after the migration ran).
+  delivery_status?: DeliveryStatus | null;
+  delivery_error?: string | null;
+  status_updated_at?: number | null;
 }
 
 export interface DashboardStats {
@@ -209,6 +217,64 @@ export const callsApi = {
   reanalyze: (id: number) => api.post<{ call: Call }>(`/api/calls/${id}/analyze`),
 
   delete: (id: number) => api.del<{ ok: true }>(`/api/calls/${id}`),
+};
+
+// ── Conversations (Phase 6 — the live "chats" view) ──
+
+export type ConversationState =
+  | 'qualifying'
+  | 'collecting'
+  | 'qualified'
+  | 'disqualified';
+
+export type ConversationFilter = 'all' | 'active' | 'stalled' | 'disqualified';
+
+export interface ConversationListItem {
+  phone: string;
+  whatsapp_name: string | null;
+  state: ConversationState;
+  created_at: number;
+  updated_at: number;
+  inbound_count: number;
+  outbound_count: number;
+  last_message_at: number | null;
+  last_message_direction: 'in' | 'out' | null;
+  last_message_text: string | null;
+  last_inbound_at: number | null;
+  last_outbound_at: number | null;
+  lead_status: LeadStatus | null;
+  is_stalled: boolean;
+  is_waiting_on_bot: boolean;
+}
+
+export interface ConversationDetail {
+  phone: string;
+  whatsapp_name: string | null;
+  state: ConversationState;
+  created_at: number;
+  updated_at: number;
+  lead_status: LeadStatus | null;
+  lead_id: number | null;
+  is_stalled: boolean;
+  is_waiting_on_bot: boolean;
+  messages: Message[];
+}
+
+export const conversationsApi = {
+  list: (filter: ConversationFilter = 'all', search?: string) => {
+    const q = new URLSearchParams();
+    if (filter !== 'all') q.set('filter', filter);
+    if (search) q.set('search', search);
+    const qs = q.toString();
+    return api.get<{ conversations: ConversationListItem[] }>(
+      `/api/conversations${qs ? '?' + qs : ''}`
+    );
+  },
+  get: (phone: string) => api.get<ConversationDetail>(`/api/conversations/${phone}`),
+  reset: (phone: string) =>
+    api.post<{ ok: true; deleted: { conversation: number; messages: number; lead: number; calls: number } }>(
+      `/api/conversations/${phone}/reset`
+    ),
 };
 
 // ── Insights (Phase 5) ──

@@ -1,9 +1,14 @@
 import type { FastifyInstance } from 'fastify';
 import { config } from '../config.js';
-import { parseIncomingWebhook, sendText } from '../services/meta.js';
+import {
+  parseIncomingWebhook,
+  parseIncomingStatuses,
+  sendText,
+} from '../services/meta.js';
 import { runTurn } from '../services/gemini.js';
 import {
   appendMessage,
+  applyStatusUpdate,
   getOrCreateConversation,
   listMessages,
   saveQualifiedLead,
@@ -12,6 +17,7 @@ import {
 } from '../services/leads.js';
 import { notifySalesteam } from '../services/notify.js';
 import { sendAlert, leadFailureAlert } from '../services/alert.js';
+import { chooseBestName, normaliseDisplayName } from '../services/name-sanitize.js';
 
 const FALLBACK_REPLY =
   "One sec — I'm having a small issue. Could you please send your message again?";
@@ -47,7 +53,34 @@ export async function webhookRoutes(app: FastifyInstance): Promise<void> {
     setImmediate(() => {
       try {
         const incoming = parseIncomingWebhook(req.body);
-        app.log.info({ parsedCount: incoming.length }, 'webhook parsed');
+        const statuses = parseIncomingStatuses(req.body);
+        app.log.info(
+          { parsedCount: incoming.length, statusCount: statuses.length },
+          'webhook parsed'
+        );
+
+        // Phase 6: persist delivery-status updates so the dashboard can
+        // show real ✓ / ✓✓ / read / failed ticks per outbound message.
+        for (const s of statuses) {
+          const changed = applyStatusUpdate(
+            s.metaMessageId,
+            s.status,
+            s.errorMessage,
+            s.timestampMs
+          );
+          if (s.status === 'failed') {
+            app.log.warn(
+              { metaId: s.metaMessageId, errorCode: s.errorCode, errorMessage: s.errorMessage },
+              'outbound message failed'
+            );
+          } else if (changed) {
+            app.log.debug(
+              { metaId: s.metaMessageId, status: s.status },
+              'delivery status updated'
+            );
+          }
+        }
+
         for (const msg of incoming) {
           processMessage(msg, app.log).catch((err) => {
             app.log.error({ err, phone: msg.phone }, 'processMessage failed');
@@ -136,22 +169,44 @@ async function processMessage(
     throw err;
   }
 
+  // Safety net: customers sometimes type junk ("yes", "automation", "ok")
+  // as their name. The WhatsApp profile name is far more reliable since
+  // they set it themselves on their phone. Prefer it whenever Gemini's
+  // extracted name fails a basic sanity check.
+  const whatsappProfileName = msg.whatsappName ?? conv.whatsapp_name;
+  const bestName = chooseBestName(turn.data.name, whatsappProfileName);
+  const finalData = {
+    ...turn.data,
+    name: bestName ? normaliseDisplayName(bestName) : null,
+  };
+  if (finalData.name !== turn.data.name) {
+    log.info(
+      {
+        phone: msg.phone,
+        extracted: turn.data.name,
+        chosen: finalData.name,
+        whatsapp_profile_name: whatsappProfileName,
+      },
+      'overrode lead name (used WhatsApp profile name)'
+    );
+  }
+
   // Decide next state.
   let nextState: ConversationState = conv.state as ConversationState;
   if (turn.action === 'DISQUALIFY') {
     nextState = 'disqualified';
   } else if (turn.action === 'QUALIFY_AND_SAVE') {
     nextState = 'qualified';
-    saveQualifiedLead(msg.phone, turn.data);
+    saveQualifiedLead(msg.phone, finalData);
     // Fire-and-forget: notify each salesperson on WhatsApp. Don't block the
     // bot's reply on this — failures (e.g. closed 24h window) are logged.
-    notifySalesteam(msg.phone, turn.data, log).catch(() => {});
+    notifySalesteam(msg.phone, finalData, log).catch(() => {});
   } else {
     // ASK_NEXT — still collecting.
     nextState = 'collecting';
   }
 
-  updateConversation(msg.phone, nextState, turn.data, msg.whatsappName);
+  updateConversation(msg.phone, nextState, finalData, msg.whatsappName);
 
   log.info(
     { phone: msg.phone, action: turn.action, nextState, replyLen: turn.reply?.length ?? 0 },

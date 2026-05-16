@@ -7,6 +7,8 @@ import LoginRoute from './routes/login.tsx';
 import LeadsListRoute from './routes/leads-list.tsx';
 import LeadDetailRoute from './routes/lead-detail.tsx';
 import StatsRoute from './routes/stats.tsx';
+import ConversationsListRoute from './routes/conversations-list.tsx';
+import ConversationDetailRoute from './routes/conversation-detail.tsx';
 import AuthGuard from './components/auth-guard.tsx';
 import './styles/globals.css';
 
@@ -52,6 +54,8 @@ createRoot(document.getElementById('root')!).render(
           >
             <Route index element={<LeadsListRoute />} />
             <Route path="lead/:phone" element={<LeadDetailRoute />} />
+            <Route path="chats" element={<ConversationsListRoute />} />
+            <Route path="chats/:phone" element={<ConversationDetailRoute />} />
             <Route path="stats" element={<StatsRoute />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />

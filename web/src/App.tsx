@@ -39,6 +39,7 @@ export default function App() {
           {/* Tabs — visible on mobile too, just compact */}
           <nav className="flex flex-1 items-center justify-center gap-1 px-2 sm:flex-initial sm:justify-start sm:px-4">
             <TabLink to="/" end label="Leads" />
+            <TabLink to="/chats" label="Chats" />
             <TabLink to="/stats" label="Stats" />
           </nav>
 
