@@ -20,7 +20,7 @@ import { sendAlert, leadFailureAlert } from '../services/alert.js';
 import { chooseBestName, normaliseDisplayName } from '../services/name-sanitize.js';
 
 const FALLBACK_REPLY =
-  "One sec — I'm having a small issue. Could you please send your message again?";
+  "One sec, I'm having a small issue. Could you please send your message again?";
 
 export async function webhookRoutes(app: FastifyInstance): Promise<void> {
   // Meta webhook verification (one-time, on subscription).

@@ -78,11 +78,35 @@ const TEAM_SIZE_VALUES: ReadonlySet<TeamSize> = new Set<TeamSize>([
   '25+',
 ]);
 
+/**
+ * Decode stray escape sequences that occasionally appear as literal text
+ * in Gemini's JSON string fields. The model sometimes writes "—"
+ * (six characters) instead of an em dash and "\n" (two characters)
+ * instead of an actual newline. JSON.parse can't fix this because the
+ * sequences were already string content by the time the wire JSON was
+ * valid. Without this, customers see "—" verbatim in their chat.
+ */
+function decodeStrayEscapes(s: string): string {
+  return s
+    .replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+      String.fromCharCode(parseInt(hex, 16))
+    )
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '');
+}
+
+function cleanString(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const cleaned = decodeStrayEscapes(v).trim();
+  return cleaned === '' ? null : cleaned;
+}
+
 function validate(raw: unknown): BotTurn {
   if (!raw || typeof raw !== 'object') throw new Error('Gemini: non-object response');
   const r = raw as Record<string, unknown>;
 
-  const reply = typeof r.reply === 'string' ? r.reply : '';
+  const reply = typeof r.reply === 'string' ? decodeStrayEscapes(r.reply) : '';
   if (
     r.action !== 'ASK_NEXT' &&
     r.action !== 'DISQUALIFY' &&
@@ -100,20 +124,11 @@ function validate(raw: unknown): BotTurn {
       : null;
 
   const data: LeadData = {
-    name: typeof d.name === 'string' && d.name.trim() !== '' ? d.name.trim() : null,
-    industry:
-      typeof d.industry === 'string' && d.industry.trim() !== ''
-        ? d.industry.trim()
-        : null,
+    name: cleanString(d.name),
+    industry: cleanString(d.industry),
     team_size: teamSize,
-    website_url:
-      typeof d.website_url === 'string' && d.website_url.trim() !== ''
-        ? d.website_url.trim()
-        : null,
-    social_handle:
-      typeof d.social_handle === 'string' && d.social_handle.trim() !== ''
-        ? d.social_handle.trim()
-        : null,
+    website_url: cleanString(d.website_url),
+    social_handle: cleanString(d.social_handle),
   };
 
   return { reply, action, data };
