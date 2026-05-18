@@ -21,6 +21,7 @@ import Conversation from '../components/conversation-bubble.tsx';
 import CallUploader from '../components/call-uploader.tsx';
 import CallsList from '../components/calls-list.tsx';
 import PrecallBriefBanner from '../components/precall-brief.tsx';
+import ChatTakeover from '../components/chat-takeover.tsx';
 
 export default function LeadDetailRoute() {
   const { phone = '' } = useParams<{ phone: string }>();
@@ -37,6 +38,10 @@ export default function LeadDetailRoute() {
     queryKey: ['lead', phone, 'messages'],
     queryFn: () => leadsApi.messages(phone),
     enabled: !!phone,
+    // Keep the transcript live so manual replies + customer responses
+    // appear without a hard refresh (matches the Chats page cadence).
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
   });
 
   const updateMutation = useMutation({
@@ -241,9 +246,17 @@ export default function LeadDetailRoute() {
         <CallsList phone={lead.phone} />
       </Section>
 
-      {/* ── Conversation transcript ── */}
+      {/* ── Conversation transcript + manual takeover ── */}
       <Section label="WhatsApp conversation" className="mt-10">
-        <Conversation messages={messages} />
+        <div className="mb-4">
+          <ChatTakeover
+            phone={lead.phone}
+            onMessageSent={() => {
+              qc.invalidateQueries({ queryKey: ['lead', phone, 'messages'] });
+            }}
+          />
+        </div>
+        <Conversation messages={messages} showDeliveryStatus />
       </Section>
 
       {/* ── Sticky mobile-only call bar ── */}
