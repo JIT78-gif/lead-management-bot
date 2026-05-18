@@ -294,6 +294,10 @@ export const conversationsApi = {
     ),
   updateNotes: (phone: string, notes: string | null) =>
     api.patch<{ ok: true }>(`/api/conversations/${phone}`, { notes }),
+  qualify: (phone: string) =>
+    api.post<{ ok: true; state: 'qualified' }>(`/api/conversations/${phone}/qualify`),
+  disqualify: (phone: string) =>
+    api.post<{ ok: true; state: 'disqualified' }>(`/api/conversations/${phone}/disqualify`),
 };
 
 // ── Insights (Phase 5) ──

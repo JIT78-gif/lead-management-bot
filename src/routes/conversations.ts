@@ -10,6 +10,8 @@ import {
 import {
   appendHumanMessage,
   getConversation,
+  manuallyDisqualify,
+  manuallyQualify,
   resetConversation,
   setBotPaused,
   setConversationNotes,
@@ -153,5 +155,29 @@ export async function conversationsRoutes(app: FastifyInstance): Promise<void> {
     if (!conv) return reply.code(404).send({ error: 'not_found' });
     setConversationNotes(params.data.phone, body.data.notes ?? null);
     return { ok: true };
+  });
+
+  // ─── Manual qualify / disqualify ─────────────────────────────
+  //
+  // The salesperson calls a customer who never replied on WhatsApp, talks
+  // to them, then comes back here and marks the outcome by hand. Bypasses
+  // Gemini. Qualifying seeds a leads row (with whatever name + collected
+  // data we already have) so it appears in the Leads tab and can be
+  // worked normally.
+
+  app.post('/api/conversations/:phone/qualify', async (req, reply) => {
+    const parsed = PhoneParam.safeParse(req.params);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_phone' });
+    const ok = manuallyQualify(parsed.data.phone);
+    if (!ok) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true, state: 'qualified' as const };
+  });
+
+  app.post('/api/conversations/:phone/disqualify', async (req, reply) => {
+    const parsed = PhoneParam.safeParse(req.params);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_phone' });
+    const ok = manuallyDisqualify(parsed.data.phone);
+    if (!ok) return reply.code(404).send({ error: 'not_found' });
+    return { ok: true, state: 'disqualified' as const };
   });
 }

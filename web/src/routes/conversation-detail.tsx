@@ -13,6 +13,8 @@ import {
   Send,
   StickyNote,
   Check,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import { conversationsApi, ApiError } from '../lib/api.ts';
 import { formatPhone, timeAgo } from '../lib/format.ts';
@@ -101,6 +103,23 @@ export default function ConversationDetailRoute() {
     onSuccess: () => {
       setNotesSavedAt(Date.now());
       qc.invalidateQueries({ queryKey: ['conversation', phone] });
+    },
+  });
+
+  const qualify = useMutation({
+    mutationFn: () => conversationsApi.qualify(phone),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversation', phone] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+      qc.invalidateQueries({ queryKey: ['leads'] });
+    },
+  });
+
+  const disqualify = useMutation({
+    mutationFn: () => conversationsApi.disqualify(phone),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversation', phone] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
     },
   });
 
@@ -361,6 +380,64 @@ export default function ConversationDetailRoute() {
               )}
               Save note
             </button>
+          )}
+        </div>
+      </section>
+
+      {/* ── Mark outcome after a manual phone call ── */}
+      <section className="mt-8 rounded-md border border-border bg-surface-1 p-4 sm:p-5">
+        <div className="mb-3">
+          <h3 className="text-sm font-medium text-ink">Mark this conversation</h3>
+          <p className="mt-1 text-[12px] leading-snug text-ink-3">
+            After you've called them, set the outcome by hand. Qualifying
+            adds them to your Leads list. Disqualifying hides them from the
+            active workflow.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => qualify.mutate()}
+            disabled={qualify.isPending || c.state === 'qualified'}
+            className="inline-flex h-11 items-center gap-2 rounded-sm px-4 text-sm font-medium text-paper transition-transform active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 sm:h-10"
+            style={{
+              background:
+                c.state === 'qualified'
+                  ? 'color-mix(in oklab, oklch(0.72 0.15 145) 70%, var(--surface-2))'
+                  : 'oklch(0.55 0.16 145)',
+            }}
+          >
+            {qualify.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
+            ) : (
+              <CheckCircle2 className="h-4 w-4" strokeWidth={2.25} />
+            )}
+            {c.state === 'qualified' ? 'Already qualified' : 'Mark as qualified'}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => disqualify.mutate()}
+            disabled={disqualify.isPending || c.state === 'disqualified'}
+            className="inline-flex h-11 items-center gap-2 rounded-sm border border-border bg-surface-1 px-4 text-sm font-medium text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink disabled:cursor-not-allowed disabled:opacity-40 sm:h-10"
+          >
+            {disqualify.isPending ? (
+              <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
+            ) : (
+              <XCircle className="h-4 w-4" strokeWidth={2.25} />
+            )}
+            {c.state === 'disqualified' ? 'Already disqualified' : 'Mark as disqualified'}
+          </button>
+
+          {c.lead_status && (
+            <Link
+              to={`/lead/${c.phone}`}
+              className="ml-auto inline-flex h-10 items-center gap-1 rounded-sm border border-border bg-surface-1 px-3 text-[12px] font-medium text-ink-2 hover:bg-surface-2 hover:text-ink"
+            >
+              Edit lead details
+              <ExternalLink className="h-3 w-3" strokeWidth={2.25} />
+            </Link>
           )}
         </div>
       </section>

@@ -9,13 +9,14 @@ import { runTurn } from '../services/gemini.js';
 import {
   appendMessage,
   applyStatusUpdate,
+  getConversation,
   getOrCreateConversation,
   listMessages,
   saveQualifiedLead,
   updateConversation,
   type ConversationState,
 } from '../services/leads.js';
-import { notifySalesteam } from '../services/notify.js';
+import { notifyNewChat, notifySalesteam } from '../services/notify.js';
 import { sendAlert, leadFailureAlert } from '../services/alert.js';
 import { chooseBestName, normaliseDisplayName } from '../services/name-sanitize.js';
 
@@ -115,9 +116,19 @@ async function processMessage(
     'processMessage start'
   );
 
+  // Detect whether this is the very first message ever from this phone.
+  // We need to know BEFORE getOrCreateConversation creates the row.
+  const isBrandNewChat = getConversation(msg.phone) === undefined;
+
   // Ensure conversation exists.
   const conv = getOrCreateConversation(msg.phone, msg.whatsappName);
-  log.info({ phone: msg.phone, state: conv.state }, 'conversation state');
+  log.info({ phone: msg.phone, state: conv.state, isBrandNewChat }, 'conversation state');
+
+  // Fire-and-forget salesperson nudge on the first ever message.
+  // Don't await — the bot's reply shouldn't block on this.
+  if (isBrandNewChat) {
+    notifyNewChat(msg.phone, msg.whatsappName, msg.text, log).catch(() => {});
+  }
 
   // Idempotency: if we've already seen this Meta message id, skip the whole turn.
   const isNew = appendMessage(msg.phone, 'in', msg.text, msg.metaMessageId);

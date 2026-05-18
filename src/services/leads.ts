@@ -277,6 +277,68 @@ export function setConversationNotes(phone: string, notes: string | null): void 
 }
 
 /**
+ * Manually flip a conversation to qualified or disqualified — used by the
+ * salesperson from the chat detail page after they've called the customer
+ * outside of the WhatsApp flow. This bypasses Gemini and lets a human
+ * decide.
+ *
+ * When qualifying: also ensures a `leads` row exists so the lead shows up
+ * in the Leads tab. We seed it with the WhatsApp profile name and whatever
+ * collected JSON we have (industry, team size, etc.) — the rest can be
+ * filled in on the Lead detail page after the call.
+ */
+const stmtSetConvoState = db.prepare(
+  `UPDATE conversations
+      SET state = @state, updated_at = @ts
+    WHERE phone = @phone`
+);
+
+const stmtUpsertMinimalLead = db.prepare(
+  `INSERT INTO leads
+     (phone, name, industry, team_size, website_url, social_handle, status, created_at, updated_at)
+   VALUES
+     (@phone, @name, @industry, @team_size, @website_url, @social_handle, 'new_qualified', @ts, @ts)
+   ON CONFLICT(phone) DO NOTHING`
+);
+
+export function manuallyQualify(phone: string): boolean {
+  const conv = getConversation(phone);
+  if (!conv) return false;
+
+  const ts = now();
+  const tx = db.transaction(() => {
+    stmtSetConvoState.run({ phone, state: 'qualified', ts });
+
+    // Seed a leads row only if there isn't one yet. We try to use whatever
+    // data the bot already collected before the salesperson intervened.
+    let collected: Partial<LeadData> = {};
+    try {
+      collected = JSON.parse(conv.collected || '{}') as Partial<LeadData>;
+    } catch {
+      // ignore — empty collected just means no extra info
+    }
+    stmtUpsertMinimalLead.run({
+      phone,
+      name: collected.name ?? conv.whatsapp_name ?? null,
+      industry: collected.industry ?? null,
+      team_size: collected.team_size ?? null,
+      website_url: collected.website_url ?? null,
+      social_handle: collected.social_handle ?? null,
+      ts,
+    });
+  });
+  tx();
+  return true;
+}
+
+export function manuallyDisqualify(phone: string): boolean {
+  const conv = getConversation(phone);
+  if (!conv) return false;
+  stmtSetConvoState.run({ phone, state: 'disqualified', ts: now() });
+  return true;
+}
+
+/**
  * Phase 6 — Apply a Meta delivery-status update to an outbound message.
  *
  * Idempotent: only advances state monotonically (sent → delivered → read,
