@@ -32,6 +32,8 @@ export interface ConversationRow {
   whatsapp_name: string | null;
   state: ConversationState;
   collected: string;
+  bot_paused: number; // 0 / 1 — SQLite has no bool
+  notes: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -60,6 +62,7 @@ export interface LeadRow {
 }
 
 export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
+export type SentBy = 'bot' | 'human';
 
 export interface MessageRow {
   direction: Direction;
@@ -68,6 +71,7 @@ export interface MessageRow {
   delivery_status?: DeliveryStatus | null;
   delivery_error?: string | null;
   status_updated_at?: number | null;
+  sent_by?: SentBy | null;
 }
 
 export interface ListLeadsFilters {
@@ -104,9 +108,11 @@ const stmtUpdateConversation = db.prepare(
 // dashboard can show a ✓ tick from the moment the message leaves us; the
 // status webhook later upgrades them to 'delivered' / 'read' or 'failed'.
 // Inbound rows leave delivery_status NULL (concept doesn't apply).
+// Phase 6.5: outbound rows also carry sent_by ('bot' by default; manual
+// replies use insertHumanMessage further down to set 'human').
 const stmtInsertMessage = db.prepare(
   `INSERT OR IGNORE INTO messages
-     (phone, direction, text, meta_message_id, delivery_status, status_updated_at, created_at)
+     (phone, direction, text, meta_message_id, delivery_status, status_updated_at, sent_by, created_at)
    VALUES (
      @phone,
      @direction,
@@ -114,9 +120,37 @@ const stmtInsertMessage = db.prepare(
      @meta_message_id,
      CASE WHEN @direction = 'out' THEN 'sent' ELSE NULL END,
      CASE WHEN @direction = 'out' THEN @created_at ELSE NULL END,
+     CASE WHEN @direction = 'out' THEN 'bot'  ELSE NULL END,
      @created_at
    )`
 );
+
+// Inserts an outbound row the salesperson sent by hand (manual takeover).
+// Same shape as a bot outbound row but with sent_by='human' so the UI can
+// distinguish them and so we never accidentally double-count human messages
+// in win-pattern analysis or coaching corpus selection.
+const stmtInsertHumanOutbound = db.prepare(
+  `INSERT OR IGNORE INTO messages
+     (phone, direction, text, meta_message_id, delivery_status, status_updated_at, sent_by, created_at)
+   VALUES (
+     @phone, 'out', @text, @meta_message_id,
+     'sent', @created_at, 'human', @created_at
+   )`
+);
+
+export function appendHumanMessage(
+  phone: string,
+  text: string,
+  metaMessageId: string
+): boolean {
+  const res = stmtInsertHumanOutbound.run({
+    phone,
+    text,
+    meta_message_id: metaMessageId,
+    created_at: now(),
+  });
+  return res.changes > 0;
+}
 
 const stmtUpdateMessageStatus = db.prepare(
   `UPDATE messages
@@ -135,7 +169,7 @@ const stmtUpdateMessageStatus = db.prepare(
 
 const stmtListMessages = db.prepare<[string]>(
   `SELECT direction, text, created_at,
-          delivery_status, delivery_error, status_updated_at
+          delivery_status, delivery_error, status_updated_at, sent_by
      FROM messages
     WHERE phone = ? ORDER BY id ASC`
 );
@@ -211,6 +245,35 @@ export function appendMessage(
 
 export function listMessages(phone: string): MessageRow[] {
   return stmtListMessages.all(phone) as MessageRow[];
+}
+
+/**
+ * Phase 6.5 — Manual takeover: pause / resume the bot for one phone.
+ * When paused=true, the webhook stores inbound messages but skips Gemini
+ * so the salesperson owns the conversation. When paused=false, the next
+ * inbound message resumes normal bot behavior.
+ */
+const stmtSetBotPaused = db.prepare(
+  `UPDATE conversations
+      SET bot_paused = @paused,
+          updated_at = @ts
+    WHERE phone = @phone`
+);
+
+export function setBotPaused(phone: string, paused: boolean): void {
+  stmtSetBotPaused.run({ phone, paused: paused ? 1 : 0, ts: now() });
+}
+
+const stmtSetConvoNotes = db.prepare(
+  `UPDATE conversations
+      SET notes = @notes,
+          updated_at = @ts
+    WHERE phone = @phone`
+);
+
+export function setConversationNotes(phone: string, notes: string | null): void {
+  const cleaned = notes && notes.trim() !== '' ? notes.trim() : null;
+  stmtSetConvoNotes.run({ phone, notes: cleaned, ts: now() });
 }
 
 /**

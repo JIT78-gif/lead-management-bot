@@ -126,6 +126,14 @@ async function processMessage(
     return;
   }
 
+  // Manual takeover: the salesperson has paused the bot for this number
+  // (Phase 6.5 "Take over chat" feature). Store the inbound message so the
+  // dashboard shows it live, then stay silent. The human is replying now.
+  if (conv.bot_paused) {
+    log.info({ phone: msg.phone }, 'conversation under manual takeover, bot silent');
+    return;
+  }
+
   // Disqualified leads are silent. Don't burn Gemini calls on them.
   if (conv.state === 'disqualified') {
     log.info({ phone: msg.phone }, 'conversation disqualified, silent skip');

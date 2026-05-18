@@ -44,6 +44,7 @@ export interface ConversationListRow {
   lead_status: LeadStatus | null;
   is_stalled: boolean;
   is_waiting_on_bot: boolean;
+  bot_paused: boolean;
 }
 
 interface RawRow {
@@ -52,6 +53,7 @@ interface RawRow {
   state: ConversationState;
   created_at: number;
   updated_at: number;
+  bot_paused: number;
   inbound_count: number;
   outbound_count: number;
   last_message_at: number | null;
@@ -72,6 +74,7 @@ const stmtListConversations = db.prepare(
      c.state,
      c.created_at,
      c.updated_at,
+     c.bot_paused,
      (SELECT COUNT(*)  FROM messages m WHERE m.phone = c.phone AND m.direction = 'in')           AS inbound_count,
      (SELECT COUNT(*)  FROM messages m WHERE m.phone = c.phone AND m.direction = 'out')          AS outbound_count,
      (SELECT MAX(created_at) FROM messages m WHERE m.phone = c.phone)                            AS last_message_at,
@@ -96,6 +99,12 @@ function computeFlags(
   const isActive = ACTIVE_STATE_SET.has(row.state);
   const last = row.last_message_at ?? row.updated_at;
   const age = now - last;
+
+  // Paused conversations are intentionally silent — don't flag "waiting on
+  // bot" or "stalled" because the silence is by design.
+  if (row.bot_paused === 1) {
+    return { is_stalled: false, is_waiting_on_bot: false };
+  }
 
   if (!isActive) {
     return { is_stalled: false, is_waiting_on_bot: false };
@@ -132,7 +141,7 @@ export function listConversations(
 
   const enriched: ConversationListRow[] = rows.map((r) => {
     const flags = computeFlags(r, now);
-    return { ...r, ...flags };
+    return { ...r, ...flags, bot_paused: r.bot_paused === 1 };
   });
 
   let filtered = enriched;
@@ -167,11 +176,14 @@ export interface ConversationDetail {
   lead_id: number | null;
   is_stalled: boolean;
   is_waiting_on_bot: boolean;
+  bot_paused: boolean;
+  notes: string | null;
   messages: MessageRow[];
 }
 
 const stmtGetConversation = db.prepare<[string]>(
   `SELECT c.phone, c.whatsapp_name, c.state, c.created_at, c.updated_at,
+          c.bot_paused, c.notes,
           l.id AS lead_id, l.status AS lead_status
      FROM conversations c
      LEFT JOIN leads l ON l.phone = c.phone
@@ -191,6 +203,8 @@ interface ConvoRawRow {
   state: ConversationState;
   created_at: number;
   updated_at: number;
+  bot_paused: number;
+  notes: string | null;
   lead_id: number | null;
   lead_status: LeadStatus | null;
 }
@@ -207,6 +221,7 @@ export function getConversationDetail(phone: string): ConversationDetail | null 
     state: row.state,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    bot_paused: row.bot_paused,
     inbound_count: 0,
     outbound_count: 0,
     last_message_at: last?.created_at ?? null,
@@ -226,6 +241,8 @@ export function getConversationDetail(phone: string): ConversationDetail | null 
     updated_at: row.updated_at,
     lead_status: row.lead_status,
     lead_id: row.lead_id,
+    bot_paused: row.bot_paused === 1,
+    notes: row.notes,
     ...flags,
     messages,
   };

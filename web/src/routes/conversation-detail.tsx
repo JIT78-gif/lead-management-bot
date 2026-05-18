@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
@@ -8,8 +8,13 @@ import {
   RotateCcw,
   Phone as PhoneIcon,
   AlertCircle,
+  UserCog,
+  Bot as BotIcon,
+  Send,
+  StickyNote,
+  Check,
 } from 'lucide-react';
-import { conversationsApi } from '../lib/api.ts';
+import { conversationsApi, ApiError } from '../lib/api.ts';
 import { formatPhone, timeAgo } from '../lib/format.ts';
 import Conversation from '../components/conversation-bubble.tsx';
 import ConvoStateBadge from '../components/convo-state-badge.tsx';
@@ -20,6 +25,11 @@ export default function ConversationDetailRoute() {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [confirmReset, setConfirmReset] = useState(false);
+  const [composeText, setComposeText] = useState('');
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [notesDraft, setNotesDraft] = useState('');
+  const [notesHydrated, setNotesHydrated] = useState(false);
+  const [notesSavedAt, setNotesSavedAt] = useState<number | null>(null);
 
   const q = useQuery({
     queryKey: ['conversation', phone],
@@ -29,6 +39,15 @@ export default function ConversationDetailRoute() {
     refetchIntervalInBackground: false,
   });
 
+  // Hydrate the notes draft once when the conversation loads. We don't want
+  // every poll-refetch to clobber whatever the salesperson is typing.
+  useEffect(() => {
+    if (q.data && !notesHydrated) {
+      setNotesDraft(q.data.notes ?? '');
+      setNotesHydrated(true);
+    }
+  }, [q.data, notesHydrated]);
+
   const reset = useMutation({
     mutationFn: () => conversationsApi.reset(phone),
     onSuccess: () => {
@@ -37,6 +56,60 @@ export default function ConversationDetailRoute() {
       navigate('/chats', { replace: true });
     },
   });
+
+  const takeover = useMutation({
+    mutationFn: () => conversationsApi.takeover(phone),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['conversation', phone] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+
+  const release = useMutation({
+    mutationFn: () => conversationsApi.release(phone),
+    onSuccess: () => {
+      setComposeText('');
+      setSendError(null);
+      qc.invalidateQueries({ queryKey: ['conversation', phone] });
+      qc.invalidateQueries({ queryKey: ['conversations'] });
+    },
+  });
+
+  const sendMsg = useMutation({
+    mutationFn: (text: string) => conversationsApi.sendMessage(phone, text),
+    onSuccess: () => {
+      setComposeText('');
+      setSendError(null);
+      // Refetch immediately so the sent message appears in the transcript
+      // without waiting for the 5s poll.
+      qc.invalidateQueries({ queryKey: ['conversation', phone] });
+    },
+    onError: (err) => {
+      const msg =
+        err instanceof ApiError
+          ? (err.payload as { message?: string })?.message ?? err.message
+          : err instanceof Error
+            ? err.message
+            : 'Send failed';
+      setSendError(msg);
+    },
+  });
+
+  const saveNotes = useMutation({
+    mutationFn: (notes: string) =>
+      conversationsApi.updateNotes(phone, notes.trim() === '' ? null : notes),
+    onSuccess: () => {
+      setNotesSavedAt(Date.now());
+      qc.invalidateQueries({ queryKey: ['conversation', phone] });
+    },
+  });
+
+  function handleSend(e: FormEvent) {
+    e.preventDefault();
+    const text = composeText.trim();
+    if (!text || sendMsg.isPending) return;
+    sendMsg.mutate(text);
+  }
 
   if (q.isLoading) {
     return <DetailSkeleton />;
@@ -105,28 +178,76 @@ export default function ConversationDetailRoute() {
             </div>
           </div>
 
-          <a
-            href={`tel:+${c.phone}`}
-            className="inline-flex h-11 shrink-0 items-center gap-2 rounded-sm bg-ink px-4 text-sm font-medium text-paper transition-transform active:scale-[0.99] sm:h-10"
-          >
-            <PhoneIcon className="h-4 w-4" strokeWidth={2.25} />
-            Call
-          </a>
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {c.bot_paused ? (
+              <button
+                type="button"
+                onClick={() => release.mutate()}
+                disabled={release.isPending}
+                className="inline-flex h-11 items-center gap-2 rounded-sm border border-border bg-surface-1 px-3.5 text-sm font-medium text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-60 sm:h-10"
+              >
+                {release.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
+                ) : (
+                  <BotIcon className="h-4 w-4" strokeWidth={2.25} />
+                )}
+                Release to bot
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => takeover.mutate()}
+                disabled={takeover.isPending}
+                className="inline-flex h-11 items-center gap-2 rounded-sm border border-border bg-surface-1 px-3.5 text-sm font-medium text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink disabled:opacity-60 sm:h-10"
+              >
+                {takeover.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
+                ) : (
+                  <UserCog className="h-4 w-4" strokeWidth={2.25} />
+                )}
+                Take over chat
+              </button>
+            )}
+            <a
+              href={`tel:+${c.phone}`}
+              className="inline-flex h-11 items-center gap-2 rounded-sm bg-ink px-4 text-sm font-medium text-paper transition-transform active:scale-[0.99] sm:h-10"
+            >
+              <PhoneIcon className="h-4 w-4" strokeWidth={2.25} />
+              Call
+            </a>
+          </div>
         </div>
 
-        {c.is_waiting_on_bot && (
+        {c.bot_paused ? (
           <p
             className="mt-4 rounded-sm border px-3 py-2 text-[12px]"
             style={{
               background:
-                'color-mix(in oklab, var(--color-accent) 7%, var(--surface-1))',
+                'color-mix(in oklab, var(--color-accent) 8%, var(--surface-1))',
               borderColor:
-                'color-mix(in oklab, var(--color-accent) 30%, transparent)',
-              color: 'var(--ink-2)',
+                'color-mix(in oklab, var(--color-accent) 35%, transparent)',
+              color: 'var(--ink)',
             }}
           >
-            Customer is waiting on a reply from the bot.
+            <strong>You're replying as Botifys.</strong> The bot is paused for
+            this conversation — any incoming messages will appear here but
+            the bot won't auto-reply until you release it.
           </p>
+        ) : (
+          c.is_waiting_on_bot && (
+            <p
+              className="mt-4 rounded-sm border px-3 py-2 text-[12px]"
+              style={{
+                background:
+                  'color-mix(in oklab, var(--color-accent) 7%, var(--surface-1))',
+                borderColor:
+                  'color-mix(in oklab, var(--color-accent) 30%, transparent)',
+                color: 'var(--ink-2)',
+              }}
+            >
+              Customer is waiting on a reply from the bot.
+            </p>
+          )
         )}
       </section>
 
@@ -141,6 +262,107 @@ export default function ConversationDetailRoute() {
           </span>
         </div>
         <Conversation messages={c.messages} showDeliveryStatus />
+      </section>
+
+      {/* ── Compose (manual reply, only when bot is paused) ── */}
+      {c.bot_paused && (
+        <section className="mt-6">
+          <form
+            onSubmit={handleSend}
+            className="rounded-md border border-border bg-surface-1 p-3 sm:p-4"
+            style={{
+              borderColor:
+                'color-mix(in oklab, var(--color-accent) 30%, var(--border))',
+            }}
+          >
+            <label
+              htmlFor="compose"
+              className="mb-2 flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-ink-3"
+            >
+              <UserCog className="h-3 w-3" strokeWidth={2.25} />
+              Send a message
+            </label>
+            <textarea
+              id="compose"
+              value={composeText}
+              onChange={(e) => {
+                setComposeText(e.target.value);
+                if (sendError) setSendError(null);
+              }}
+              placeholder="Type a reply to send via WhatsApp…"
+              rows={3}
+              disabled={sendMsg.isPending}
+              className="block w-full resize-y rounded-sm border border-border bg-paper px-3 py-2 text-[14px] leading-snug text-ink placeholder:text-ink-4 focus:border-ink-3 focus:outline-none disabled:opacity-60"
+            />
+            {sendError && (
+              <p
+                className="mt-2 text-[12px]"
+                style={{ color: 'var(--color-accent)' }}
+                role="alert"
+              >
+                {sendError}
+              </p>
+            )}
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+              <span className="text-[11px] text-ink-4">
+                Sent as Botifys via WhatsApp · counts against the 24h window.
+              </span>
+              <button
+                type="submit"
+                disabled={!composeText.trim() || sendMsg.isPending}
+                className="inline-flex h-11 items-center gap-2 rounded-sm px-4 text-sm font-medium text-paper transition-transform active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-40 sm:h-10"
+                style={{ background: 'var(--color-accent)' }}
+              >
+                {sendMsg.isPending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" strokeWidth={2} />
+                ) : (
+                  <Send className="h-4 w-4" strokeWidth={2.25} />
+                )}
+                Send
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
+
+      {/* ── Notes (per-conversation, all states) ── */}
+      <section className="mt-8">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-[0.2em] text-ink-3">
+            <StickyNote className="h-3 w-3" strokeWidth={2.25} />
+            Notes
+          </h2>
+          {notesSavedAt && notesDraft === (c.notes ?? '') && (
+            <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.18em] text-ink-4">
+              <Check className="h-3 w-3" strokeWidth={2.5} />
+              Saved {timeAgo(notesSavedAt)}
+            </span>
+          )}
+        </div>
+        <textarea
+          value={notesDraft}
+          onChange={(e) => setNotesDraft(e.target.value)}
+          placeholder="Called at 3pm, no answer. Try again Wed morning. Wife runs operations, ask for her."
+          rows={4}
+          className="block w-full resize-y rounded-sm border border-border bg-surface-1 px-3 py-2.5 text-[14px] leading-snug text-ink placeholder:text-ink-4 focus:border-ink-3 focus:outline-none"
+        />
+        <div className="mt-2 flex items-center justify-end gap-2">
+          {notesDraft !== (c.notes ?? '') && (
+            <button
+              type="button"
+              onClick={() => saveNotes.mutate(notesDraft)}
+              disabled={saveNotes.isPending}
+              className="inline-flex h-10 items-center gap-2 rounded-sm bg-ink px-4 text-sm font-medium text-paper disabled:opacity-60"
+            >
+              {saveNotes.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" strokeWidth={2} />
+              ) : (
+                <Check className="h-3.5 w-3.5" strokeWidth={2.25} />
+              )}
+              Save note
+            </button>
+          )}
+        </div>
       </section>
 
       {/* ── Reset (recover from false-disqualify) ── */}

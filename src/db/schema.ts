@@ -4,6 +4,8 @@ CREATE TABLE IF NOT EXISTS conversations (
   whatsapp_name   TEXT,
   state           TEXT NOT NULL,
   collected       TEXT NOT NULL DEFAULT '{}',
+  bot_paused      INTEGER NOT NULL DEFAULT 0,
+  notes           TEXT,
   created_at      INTEGER NOT NULL,
   updated_at      INTEGER NOT NULL
 );
@@ -17,6 +19,7 @@ CREATE TABLE IF NOT EXISTS messages (
   delivery_status     TEXT,
   delivery_error      TEXT,
   status_updated_at   INTEGER,
+  sent_by             TEXT,         -- 'bot' or 'human' for outbound; NULL for inbound
   created_at          INTEGER NOT NULL,
   FOREIGN KEY (phone) REFERENCES conversations(phone)
 );

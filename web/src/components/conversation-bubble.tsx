@@ -1,4 +1,4 @@
-import { Bot, User } from 'lucide-react';
+import { Bot, User, UserCog } from 'lucide-react';
 import type { Message } from '../lib/api.ts';
 import DeliveryTick from './delivery-tick.tsx';
 
@@ -127,6 +127,8 @@ function Bubble({
       >
         {isCustomer ? (
           <User className="h-3.5 w-3.5" strokeWidth={2.25} />
+        ) : message.sent_by === 'human' ? (
+          <UserCog className="h-3.5 w-3.5" strokeWidth={2.25} />
         ) : (
           <Bot className="h-3.5 w-3.5" strokeWidth={2.25} />
         )}
@@ -143,7 +145,19 @@ function Bubble({
         >
           <p className="whitespace-pre-wrap wrap-break-word">{message.text}</p>
         </div>
-        <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-mono text-ink-4 tabular">
+        <span className="mt-1 inline-flex items-center gap-1.5 text-[10px] font-mono text-ink-4 tabular">
+          {!isCustomer && message.sent_by === 'human' && (
+            <span
+              className="rounded-xs px-1 py-px text-[9px] font-medium uppercase tracking-[0.14em] not-italic"
+              style={{
+                background:
+                  'color-mix(in oklab, var(--color-accent) 14%, transparent)',
+                color: 'var(--color-accent)',
+              }}
+            >
+              You
+            </span>
+          )}
           {formatTime(message.created_at)}
           {!isCustomer && showDeliveryStatus && (
             <DeliveryTick

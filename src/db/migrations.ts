@@ -47,4 +47,9 @@ export function runMigrations(db: Database.Database): void {
   db.exec(
     `CREATE INDEX IF NOT EXISTS idx_messages_phone_created ON messages(phone, created_at)`
   );
+
+  // Phase 6.5 — manual takeover + per-conversation notes + sender attribution.
+  addColumnIfMissing(db, 'conversations', 'bot_paused', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfMissing(db, 'conversations', 'notes', 'TEXT');
+  addColumnIfMissing(db, 'messages', 'sent_by', 'TEXT');
 }

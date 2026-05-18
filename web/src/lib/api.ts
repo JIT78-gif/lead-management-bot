@@ -90,6 +90,7 @@ export const authApi = {
 };
 
 export type DeliveryStatus = 'sent' | 'delivered' | 'read' | 'failed';
+export type SentBy = 'bot' | 'human';
 
 export interface Message {
   direction: 'in' | 'out';
@@ -101,6 +102,9 @@ export interface Message {
   delivery_status?: DeliveryStatus | null;
   delivery_error?: string | null;
   status_updated_at?: number | null;
+  // Phase 6.5 — distinguish bot vs manual replies. NULL for inbound and
+  // for pre-migration outbound rows.
+  sent_by?: SentBy | null;
 }
 
 export interface DashboardStats {
@@ -245,6 +249,7 @@ export interface ConversationListItem {
   lead_status: LeadStatus | null;
   is_stalled: boolean;
   is_waiting_on_bot: boolean;
+  bot_paused?: boolean;
 }
 
 export interface ConversationDetail {
@@ -257,6 +262,8 @@ export interface ConversationDetail {
   lead_id: number | null;
   is_stalled: boolean;
   is_waiting_on_bot: boolean;
+  bot_paused: boolean;
+  notes: string | null;
   messages: Message[];
 }
 
@@ -275,6 +282,18 @@ export const conversationsApi = {
     api.post<{ ok: true; deleted: { conversation: number; messages: number; lead: number; calls: number } }>(
       `/api/conversations/${phone}/reset`
     ),
+  // Phase 6.5 — manual takeover
+  takeover: (phone: string) =>
+    api.post<{ ok: true; bot_paused: true }>(`/api/conversations/${phone}/takeover`),
+  release: (phone: string) =>
+    api.post<{ ok: true; bot_paused: false }>(`/api/conversations/${phone}/release`),
+  sendMessage: (phone: string, text: string) =>
+    api.post<{ ok: true; meta_message_id: string }>(
+      `/api/conversations/${phone}/messages`,
+      { text }
+    ),
+  updateNotes: (phone: string, notes: string | null) =>
+    api.patch<{ ok: true }>(`/api/conversations/${phone}`, { notes }),
 };
 
 // ── Insights (Phase 5) ──

@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, UserCog } from 'lucide-react';
 import type { ConversationListItem } from '../lib/api.ts';
 import { formatPhone, timeAgo } from '../lib/format.ts';
 import ConvoStateBadge from './convo-state-badge.tsx';
@@ -69,6 +69,22 @@ export default function ConversationCard({
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <ConvoStateBadge state={convo.state} />
           {convo.is_stalled && <StallBadge />}
+          {convo.bot_paused && (
+            <span
+              className="inline-flex items-center gap-1 rounded-xs px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.14em]"
+              style={{
+                background:
+                  'color-mix(in oklab, var(--color-accent) 14%, var(--surface-1))',
+                color: 'var(--color-accent)',
+                border:
+                  '1px solid color-mix(in oklab, var(--color-accent) 30%, transparent)',
+              }}
+              title="You've taken over this chat. Bot is paused."
+            >
+              <UserCog className="h-2.5 w-2.5" strokeWidth={2.5} />
+              Manual
+            </span>
+          )}
           <span className="ml-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.16em] text-ink-4">
             {convo.inbound_count + convo.outbound_count} msg
           </span>

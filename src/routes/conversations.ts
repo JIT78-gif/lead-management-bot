@@ -7,7 +7,14 @@ import {
   listConversations,
   type ConversationFilter,
 } from '../services/conversations.js';
-import { resetConversation } from '../services/leads.js';
+import {
+  appendHumanMessage,
+  getConversation,
+  resetConversation,
+  setBotPaused,
+  setConversationNotes,
+} from '../services/leads.js';
+import { sendText } from '../services/meta.js';
 
 const ListQuery = z.object({
   filter: z
@@ -19,6 +26,14 @@ const ListQuery = z.object({
 
 const PhoneParam = z.object({
   phone: z.string().regex(/^\d{6,20}$/, 'invalid phone'),
+});
+
+const SendBody = z.object({
+  text: z.string().trim().min(1, 'empty message').max(4000, 'too long'),
+});
+
+const NotesBody = z.object({
+  notes: z.string().max(5000).optional().nullable(),
 });
 
 export async function conversationsRoutes(app: FastifyInstance): Promise<void> {
@@ -60,5 +75,83 @@ export async function conversationsRoutes(app: FastifyInstance): Promise<void> {
     }
     const result = resetConversation(parsed.data.phone);
     return { ok: true, deleted: result };
+  });
+
+  // ─── Phase 6.5 — Manual takeover ─────────────────────────────
+  //
+  // The salesperson clicks "Take over chat" → bot stops auto-replying for
+  // that phone. They click "Release to bot" → bot resumes on next inbound.
+
+  app.post('/api/conversations/:phone/takeover', async (req, reply) => {
+    const parsed = PhoneParam.safeParse(req.params);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_phone' });
+    const conv = getConversation(parsed.data.phone);
+    if (!conv) return reply.code(404).send({ error: 'not_found' });
+    setBotPaused(parsed.data.phone, true);
+    return { ok: true, bot_paused: true };
+  });
+
+  app.post('/api/conversations/:phone/release', async (req, reply) => {
+    const parsed = PhoneParam.safeParse(req.params);
+    if (!parsed.success) return reply.code(400).send({ error: 'invalid_phone' });
+    const conv = getConversation(parsed.data.phone);
+    if (!conv) return reply.code(404).send({ error: 'not_found' });
+    setBotPaused(parsed.data.phone, false);
+    return { ok: true, bot_paused: false };
+  });
+
+  // ─── Send a manual WhatsApp message ──────────────────────────
+  //
+  // Sends via Meta and records the row with sent_by='human'. Does NOT
+  // auto-pause the bot — that's a deliberate separate action. (Most flows
+  // will pause first; this lets the salesperson send a single nudge
+  // without pausing if they want to.)
+
+  app.post('/api/conversations/:phone/messages', async (req, reply) => {
+    const params = PhoneParam.safeParse(req.params);
+    if (!params.success) return reply.code(400).send({ error: 'invalid_phone' });
+    const body = SendBody.safeParse(req.body);
+    if (!body.success) {
+      return reply.code(400).send({
+        error: 'invalid_body',
+        message: body.error.issues[0]?.message ?? 'invalid body',
+      });
+    }
+    const conv = getConversation(params.data.phone);
+    if (!conv) return reply.code(404).send({ error: 'not_found' });
+
+    try {
+      const metaId = await sendText(params.data.phone, body.data.text);
+      appendHumanMessage(params.data.phone, body.data.text, metaId);
+      return { ok: true, meta_message_id: metaId };
+    } catch (err) {
+      app.log.error(
+        { err, phone: params.data.phone },
+        'manual message send failed'
+      );
+      // 422 not 502 — most failures here are "outside 24h window" or
+      // "invalid number", which are client-correctable, not server bugs.
+      return reply.code(422).send({
+        error: 'send_failed',
+        message: err instanceof Error ? err.message : 'send failed',
+      });
+    }
+  });
+
+  // ─── Per-conversation notes ──────────────────────────────────
+  //
+  // Distinct from leads.notes (which only exists for qualified leads).
+  // The salesperson uses this to track "called, no answer", "call back
+  // Wed 4pm", etc. for ANY conversation, qualified or not.
+
+  app.patch('/api/conversations/:phone', async (req, reply) => {
+    const params = PhoneParam.safeParse(req.params);
+    if (!params.success) return reply.code(400).send({ error: 'invalid_phone' });
+    const body = NotesBody.safeParse(req.body);
+    if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+    const conv = getConversation(params.data.phone);
+    if (!conv) return reply.code(404).send({ error: 'not_found' });
+    setConversationNotes(params.data.phone, body.data.notes ?? null);
+    return { ok: true };
   });
 }
