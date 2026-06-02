@@ -1,10 +1,7 @@
-import { GoogleGenAI, Type } from '@google/genai';
-import type { Content } from '@google/genai';
-import { config } from '../config.js';
+import { Type, type Schema } from '@google/genai';
 import { SYSTEM_INSTRUCTION } from '../prompts/system.js';
 import type { LeadData, MessageRow, TeamSize } from './leads.js';
-
-const ai = new GoogleGenAI({ apiKey: config.gemini.apiKey });
+import { callJsonModel, type LLMTurn } from './llm.js';
 
 export type BotAction = 'ASK_NEXT' | 'DISQUALIFY' | 'QUALIFY_AND_SAVE';
 
@@ -14,7 +11,7 @@ export interface BotTurn {
   data: LeadData;
 }
 
-const RESPONSE_SCHEMA = {
+const RESPONSE_SCHEMA: Schema = {
   type: Type.OBJECT,
   properties: {
     reply: { type: Type.STRING },
@@ -45,26 +42,25 @@ function historyToContents(
   history: MessageRow[],
   whatsappName: string | null,
   currentState: string
-): Content[] {
-  const contents: Content[] = [];
+): LLMTurn[] {
+  const contents: LLMTurn[] = [];
 
   const meta = `[meta: whatsapp_profile_name=${whatsappName ?? 'unknown'}, conversation_state=${currentState}]`;
 
   for (const m of history) {
     contents.push({
       role: m.direction === 'in' ? 'user' : 'model',
-      parts: [{ text: m.text }],
+      text: m.text,
     });
   }
 
-  // Inject the meta hint as the final user-side note before Gemini answers.
-  // This nudges Gemini to use the profile name and remember the state without
-  // polluting the actual customer-visible transcript.
+  // Append the meta hint to the last user message (or start a new one) so
+  // the model sees it but the customer never does.
   if (contents.length > 0 && contents[contents.length - 1]!.role === 'user') {
     const last = contents[contents.length - 1]!;
-    last.parts = [...(last.parts ?? []), { text: meta }];
+    last.text = `${last.text}\n${meta}`;
   } else {
-    contents.push({ role: 'user', parts: [{ text: meta }] });
+    contents.push({ role: 'user', text: meta });
   }
 
   return contents;
@@ -134,37 +130,40 @@ function validate(raw: unknown): BotTurn {
   return { reply, action, data };
 }
 
-async function callOnce(contents: Content[]): Promise<BotTurn> {
-  const response = await ai.models.generateContent({
-    model: config.gemini.model,
-    contents,
-    config: {
+async function callOnce(
+  contents: LLMTurn[],
+  log?: { warn?: (...a: unknown[]) => void; info?: (...a: unknown[]) => void }
+): Promise<BotTurn> {
+  const { text } = await callJsonModel(
+    {
       systemInstruction: SYSTEM_INSTRUCTION,
-      responseMimeType: 'application/json',
+      contents,
       responseSchema: RESPONSE_SCHEMA,
       temperature: 0.4,
     },
-  });
-
-  const text = response.text;
-  if (!text) throw new Error('Gemini: empty response text');
+    log
+  );
   return validate(JSON.parse(text));
 }
 
 /**
- * Run one bot turn. Calls Gemini with the full conversation history and a
- * single retry on failure.
+ * Run one bot turn. Tries direct Gemini first; falls back to OpenRouter on
+ * billing / auth / quota / 5xx / transient errors. Retries once on
+ * everything else. Throws after both providers AND a retry have failed.
  */
 export async function runTurn(
   history: MessageRow[],
   whatsappName: string | null,
-  currentState: string
+  currentState: string,
+  log?: { warn?: (...a: unknown[]) => void; info?: (...a: unknown[]) => void }
 ): Promise<BotTurn> {
   const contents = historyToContents(history, whatsappName, currentState);
   try {
-    return await callOnce(contents);
+    return await callOnce(contents, log);
   } catch (err) {
-    // Retry once on transient errors / malformed JSON.
-    return await callOnce(contents);
+    // One retry on residual flakes (the fallback inside callJsonModel
+    // already handled the structural failures; this catches transient
+    // network / JSON parse hiccups).
+    return await callOnce(contents, log);
   }
 }

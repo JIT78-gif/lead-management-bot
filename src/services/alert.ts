@@ -106,9 +106,15 @@ export function leadFailureAlert(args: {
     ? `${args.customerName} (+${args.customerPhone})`
     : `+${args.customerPhone}`;
 
+  // Sniff the error message for known patterns and surface a sharper
+  // diagnosis + recommended action. Saves the owner ten minutes of
+  // Googling what "Lightning dunning" means at 2 AM.
+  const classified = classifyError(args.errorMessage);
+
   const body = [
     `What went wrong:`,
     reasonLabel[args.reason],
+    classified.diagnosis ? `\n${classified.diagnosis}` : '',
     ``,
     `Customer: ${who}`,
     `Their last message: "${args.customerLastMessage}"`,
@@ -119,12 +125,95 @@ export function leadFailureAlert(args: {
     ``,
     `Open in dashboard: ${dashLink}`,
     ``,
-    `Action: open the lead and reply manually so the customer doesn't bounce.`,
-  ].join('\n');
+    `Action: ${classified.action}`,
+  ].filter(Boolean).join('\n');
 
   return {
-    category: `lead_failure:${args.reason}`,
-    subject: `⚠ Bot couldn't reply — ${who}`,
+    // Different category for known root causes so throttling doesn't
+    // collapse a "billing block" with a normal gemini hiccup.
+    category: `lead_failure:${args.reason}:${classified.tag}`,
+    subject: classified.subject ?? `⚠ Bot couldn't reply — ${who}`,
     body,
+  };
+}
+
+interface Classified {
+  tag: string;
+  diagnosis: string | null;
+  action: string;
+  subject: string | null;
+}
+
+function classifyError(errorMessage: string): Classified {
+  const msg = errorMessage.toLowerCase();
+
+  // Google Cloud billing block. Their internal name for the dunning /
+  // collection system is "Lightning". 403 PERMISSION_DENIED with that
+  // word means the project's API access has been cut off for billing.
+  if (
+    msg.includes('lightning dunning') ||
+    (msg.includes('permission_denied') && msg.includes('billing')) ||
+    msg.includes('billing account')
+  ) {
+    return {
+      tag: 'billing_block',
+      subject: '⚠ Gemini API blocked — check Google Cloud billing',
+      diagnosis:
+        'Google Cloud has blocked your project from calling the Gemini API. ' +
+        'This is almost always a billing issue: unpaid invoice, failed payment ' +
+        'method, or free credits exhausted without a paid account set up.',
+      action:
+        '1) Open https://console.cloud.google.com/billing\n' +
+        '2) Find the billing account linked to the project named in the error\n' +
+        '3) Resolve any unpaid invoice / failed payment method\n' +
+        '4) (Fastest unblock) Generate a fresh GEMINI_API_KEY on a different ' +
+        'project with working billing, paste it into Easypanel, redeploy.',
+    };
+  }
+
+  // Quota / rate limit exhaustion — different from billing block.
+  if (
+    msg.includes('quota') ||
+    msg.includes('resource_exhausted') ||
+    msg.includes('429')
+  ) {
+    return {
+      tag: 'quota',
+      subject: '⚠ Gemini quota exhausted — bot is rate-limited',
+      diagnosis:
+        'Hit a Gemini quota or rate limit. If on the free tier, you may have ' +
+        'burned through the per-minute or per-day budget.',
+      action:
+        'Wait a few minutes (per-minute quota resets fast) or enable a paid ' +
+        'billing account on the Google Cloud project for higher limits.',
+    };
+  }
+
+  // Invalid / revoked API key.
+  if (
+    msg.includes('api key not valid') ||
+    msg.includes('api_key_invalid') ||
+    msg.includes('invalid_argument') ||
+    msg.includes('401') ||
+    msg.includes('unauthenticated')
+  ) {
+    return {
+      tag: 'auth',
+      subject: '⚠ Gemini API key invalid — bot is offline',
+      diagnosis:
+        'Gemini rejected the API key. It may have been revoked, deleted, or ' +
+        "incorrectly pasted (extra whitespace, missing characters).",
+      action:
+        'Generate a fresh API key at https://aistudio.google.com/apikey, ' +
+        'paste it into Easypanel as GEMINI_API_KEY, redeploy.',
+    };
+  }
+
+  // Default — generic failure. Owner takes over manually.
+  return {
+    tag: 'generic',
+    subject: null,
+    diagnosis: null,
+    action: "open the lead and reply manually so the customer doesn't bounce.",
   };
 }

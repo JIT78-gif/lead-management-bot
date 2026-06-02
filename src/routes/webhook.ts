@@ -167,7 +167,7 @@ async function processMessage(
 
   let turn;
   try {
-    turn = await runTurn(history, msg.whatsappName ?? conv.whatsapp_name, conv.state);
+    turn = await runTurn(history, msg.whatsappName ?? conv.whatsapp_name, conv.state, log);
   } catch (err) {
     // Gemini fully failed (twice) — apologise so the customer isn't stranded.
     await sendAndLog(msg.phone, FALLBACK_REPLY).catch(() => {});

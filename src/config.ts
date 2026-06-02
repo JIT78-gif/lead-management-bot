@@ -24,9 +24,25 @@ export const config = {
     graphApiVersion: optional('META_GRAPH_API_VERSION', 'v21.0'),
   },
 
+  // Gemini (primary). Optional now that OpenRouter can stand in as a full
+  // replacement, but at LEAST ONE of GEMINI_API_KEY / OPENROUTER_API_KEY
+  // must be set or the bot can't think. Enforced after the object below.
   gemini: {
-    apiKey: required('GEMINI_API_KEY'),
+    apiKey: optional('GEMINI_API_KEY', ''),
     model: optional('GEMINI_MODEL', 'gemini-2.5-flash'),
+  },
+
+  // OpenRouter — falls back here when direct Gemini fails (billing block,
+  // auth, quota, transient 5xx), OR runs as the sole provider when
+  // GEMINI_API_KEY is empty. Use the same Gemini model family by default
+  // so bot behavior matches.
+  openrouter: {
+    apiKey: optional('OPENROUTER_API_KEY', ''),
+    model: optional('OPENROUTER_MODEL', 'google/gemini-2.5-flash'),
+    // OpenRouter recommends these for attribution; they show up in the
+    // OpenRouter dashboard usage breakdown and on rankings pages.
+    appName: optional('OPENROUTER_APP_NAME', 'Botifys Lead Desk'),
+    appUrl: optional('OPENROUTER_APP_URL', 'https://whatsapp.botifys.com'),
   },
 
   db: {
@@ -85,6 +101,15 @@ export const config = {
     fromEmail: optional('ALERT_FROM_EMAIL', 'onboarding@resend.dev'),
   },
 } as const;
+
+// At least one LLM provider must be configured, otherwise the bot can't
+// reply at all and we'd ship a silently broken deployment.
+if (!config.gemini.apiKey && !config.openrouter.apiKey) {
+  throw new Error(
+    'No AI provider configured: set GEMINI_API_KEY or OPENROUTER_API_KEY ' +
+      '(both is best — gives you automatic fallback).'
+  );
+}
 
 function requireMinLength(name: string, minLength: number): string {
   const value = required(name);

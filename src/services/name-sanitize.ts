@@ -22,7 +22,64 @@ const NOT_NAMES: ReadonlySet<string> = new Set([
   'automation', 'business', 'whatsapp', 'whatsapp user', 'user',
   'admin', 'owner', 'test', 'testing', 'sample',
   'maybe', 'whatever', 'idk', 'tbh',
+  // skip / refuse intent
+  'skip', 'skipp', 'pass', 'next', 'later', 'private',
 ]);
+
+// Words that — when present in a multi-word answer — strongly signal that
+// the text is a SENTENCE / INSTRUCTION / OBJECTION, not a name.
+// Detecting these stops disasters like a lead with name="you can skipp
+// this question" or name="i don't want to share".
+const SENTENCE_INDICATORS: ReadonlySet<string> = new Set([
+  'skip', 'skipp', 'skipped', 'skipping',
+  'dont', "don't", 'doesnt', "doesn't", 'wont', "won't",
+  'cant', "can't", 'cannot', 'isnt', "isn't",
+  'question', 'questions', 'ask', 'asking', 'answer', 'answers',
+  'reply', 'replies', 'tell', 'share', 'give', 'send',
+  'pricing', 'price', 'cost', 'rate', 'rates',
+  'why', 'how', 'when', 'where', 'what', 'which', 'who',
+  'need', 'want', 'know', 'understand', 'mean', 'think',
+  'later', 'soon', 'now', 'today', 'tomorrow', 'never',
+  'please', 'sorry', 'thank', 'thanks',
+  'this', 'that', 'these', 'those',
+  'business', 'company', 'team', 'work', 'call',
+]);
+
+// First-word pronouns that signal a sentence rather than a name.
+const SENTENCE_STARTERS: ReadonlySet<string> = new Set([
+  'you', 'we', 'they', 'this', 'that', 'it', 'there', 'here',
+  'do', 'does', 'did', 'is', 'are', 'was', 'were', 'will', 'would',
+  'can', 'could', 'should', 'may', 'might',
+  'please', 'sorry', 'just',
+]);
+
+/**
+ * Detect inputs that look like a sentence, command, or objection rather
+ * than a name. Multi-word inputs containing skip/refuse/objection words,
+ * question marks, or sentence-starter pronouns are rejected.
+ */
+function looksLikeSentence(s: string): boolean {
+  const trimmed = s.trim();
+  if (trimmed.length === 0) return false;
+
+  // Anything ending in a question mark is a question, not a name.
+  if (/[?]/.test(trimmed)) return true;
+
+  const lower = trimmed.toLowerCase();
+  const words = lower.split(/\s+/);
+
+  // Real names are typically 1-4 words ("Anshul", "Anshul Singh",
+  // "Anshul Kumar Singh Bhatia"). 5+ words is almost certainly a sentence.
+  if (words.length >= 5) return true;
+
+  // Multi-word + contains a sentence-indicator → sentence.
+  if (words.length >= 2) {
+    if (SENTENCE_STARTERS.has(words[0]!)) return true;
+    if (words.some((w) => SENTENCE_INDICATORS.has(w))) return true;
+  }
+
+  return false;
+}
 
 const DEVANAGARI_RANGE = /[ऀ-ॿ]/;
 const LETTER = /[a-zA-Zऀ-ॿ]/;
@@ -39,6 +96,10 @@ export function looksLikeRealName(s: string | null | undefined): boolean {
 
   const lower = trimmed.toLowerCase();
   if (NOT_NAMES.has(lower)) return false;
+
+  // Reject sentences / commands / objections like "you can skip this
+  // question" or "i don't want to share my name".
+  if (looksLikeSentence(trimmed)) return false;
 
   // Must contain at least one letter (Latin or Devanagari for Hindi names).
   if (!LETTER.test(trimmed)) return false;
@@ -59,9 +120,13 @@ export function looksLikeRealName(s: string | null | undefined): boolean {
  * Decide which name to save:
  *   1. The extracted name from Gemini, if it looks real.
  *   2. Otherwise the WhatsApp profile name, if it looks real.
- *   3. Otherwise whichever non-empty string we have (so the salesperson
- *      at least sees the customer's literal answer, not null).
- *   4. Null only if we truly have nothing.
+ *   3. Otherwise NULL — better an "Unnamed lead" the salesperson can
+ *      ask about on the call than something misleading like
+ *      "you can skipp this question" sitting in the dashboard forever.
+ *
+ * (The WhatsApp profile name is also stored separately on the
+ * conversation row, so the salesperson can still see whatever name they
+ * had set even when we choose null here.)
  */
 export function chooseBestName(
   extractedName: string | null | undefined,
@@ -72,11 +137,6 @@ export function chooseBestName(
 
   if (looksLikeRealName(extracted)) return extracted;
   if (looksLikeRealName(profile)) return profile;
-
-  // Both failed the strict check. Prefer the longer / more-informative one
-  // so the salesperson at least has a starting point.
-  if (profile && (!extracted || profile.length >= extracted.length)) return profile;
-  if (extracted) return extracted;
   return null;
 }
 
