@@ -45,7 +45,23 @@ function historyToContents(
 ): LLMTurn[] {
   const contents: LLMTurn[] = [];
 
-  const meta = `[meta: whatsapp_profile_name=${whatsappName ?? 'unknown'}, conversation_state=${currentState}]`;
+  // Count how many bot replies are in the history so the model knows
+  // whether this is its FIRST turn (must greet) or a later turn (already
+  // greeted, advance the flow).
+  const botRepliesSoFar = history.filter((m) => m.direction === 'out').length;
+  const isFirstReply = botRepliesSoFar === 0;
+
+  const flowHint = isFirstReply
+    ? 'THIS IS YOUR FIRST REPLY IN THE CONVERSATION. ' +
+      'You MUST reply with the step-1 greeting verbatim. ' +
+      'Set ALL data fields to null. Do NOT skip ahead. Do NOT infer ' +
+      'industry, name, or anything else from the customer\'s first message.'
+    : `You have already sent ${botRepliesSoFar} reply/replies in this ` +
+      'conversation. Look at your previous bot messages above to figure ' +
+      'out which flow step you are on, and proceed with the NEXT step. ' +
+      'Do not repeat a step you have already completed.';
+
+  const meta = `[meta: whatsapp_profile_name=${whatsappName ?? 'unknown'}, conversation_state=${currentState}, bot_replies_sent=${botRepliesSoFar}]\n${flowHint}`;
 
   for (const m of history) {
     contents.push({
