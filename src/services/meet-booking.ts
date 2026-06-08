@@ -247,7 +247,7 @@ async function handleAwaitingAltConfirm(
   customerName: string | null,
   log: FastifyBaseLogger
 ): Promise<AdvanceResult> {
-  const tz = config.google.workingTimezone;
+  const customerTz = customerTimezone(conv);
   const lower = customerText.trim().toLowerCase();
   const affirmative =
     /\b(yes|yeah|yep|sure|ok|okay|works|good|fine|perfect|confirmed?)\b/.test(lower);
@@ -265,7 +265,7 @@ async function handleAwaitingAltConfirm(
         description: `Booked via Botifys WhatsApp bot.\nCustomer phone: +${conv.phone}`,
         startISO,
         endISO,
-        timezone: tz,
+        timezone: config.google.workingTimezone, // event sits in owner's TZ
       });
       setMeetEvent(conv.phone, {
         eventId: ev.eventId,
@@ -274,7 +274,8 @@ async function handleAwaitingAltConfirm(
         status: 'awaiting_email',
       });
       log.info({ phone: conv.phone, eventId: ev.eventId }, 'Meet booked on alternative slot');
-      const human = formatHumanTime(startISO, tz);
+      // Echo back in CUSTOMER's local TZ.
+      const human = formatHumanTime(startISO, customerTz);
       return {
         kind: 'reply',
         text: `Great! Booked ${human}. What's the best email to send you the Meet invite?`,
@@ -282,7 +283,7 @@ async function handleAwaitingAltConfirm(
     } catch (err) {
       log.error({ err, phone: conv.phone }, 'createMeet (alt) failed; falling back');
       setMeetStatus(conv.phone, 'fallback_manual');
-      return { kind: 'fallback_manual', text: formatHumanTime(startISO, tz) };
+      return { kind: 'fallback_manual', text: formatHumanTime(startISO, customerTz) };
     }
   }
 
@@ -302,6 +303,7 @@ async function handleAwaitingEmail(
   customerText: string,
   log: FastifyBaseLogger
 ): Promise<AdvanceResult> {
+  const customerTz = customerTimezone(conv);
   const match = customerText.match(EMAIL_RE);
   if (match) {
     const email = match[0].toLowerCase();
@@ -316,8 +318,9 @@ async function handleAwaitingEmail(
       setCustomerEmail(conv.phone, email);
       setMeetStatus(conv.phone, 'confirmed');
       log.info({ phone: conv.phone, email, eventId: conv.meet_event_id }, 'Meet attendee added, invite sent');
+      // Customer-facing time in their TZ.
       const human = conv.meet_proposed_iso
-        ? formatHumanTime(conv.meet_proposed_iso, config.google.workingTimezone)
+        ? formatHumanTime(conv.meet_proposed_iso, customerTz)
         : 'your booked time';
       return {
         kind: 'finished',
@@ -352,7 +355,7 @@ async function handleAwaitingEmail(
   if (refusing && conv.meet_link) {
     setMeetStatus(conv.phone, 'confirmed');
     const human = conv.meet_proposed_iso
-      ? formatHumanTime(conv.meet_proposed_iso, config.google.workingTimezone)
+      ? formatHumanTime(conv.meet_proposed_iso, customerTz)
       : 'your booked time';
     return {
       kind: 'finished',

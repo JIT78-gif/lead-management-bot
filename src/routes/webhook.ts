@@ -135,6 +135,18 @@ async function processMessage(
   // pre-fill per campaign). Both are cheap, deterministic, server-side.
   let routedCountry = detectCountry(msg.phone);
   let routedNiche = detectNiche(msg.text);
+
+  // Testing override: phones in TEST_INTERNATIONAL_PHONES get treated
+  // as international (Meet booking flow) regardless of their actual
+  // country code. Used to dry-run the international flow with an
+  // Indian +91 number before pointing real overseas ads at the bot.
+  if (config.testing.forceInternationalPhones.includes(msg.phone)) {
+    routedCountry = { ...routedCountry, isIndia: false };
+    log.info(
+      { phone: msg.phone },
+      'TEST override: routing this Indian number as international'
+    );
+  }
   if (isBrandNewChat) {
     setConversationRouting(msg.phone, routedCountry.code, routedNiche);
     log.info(

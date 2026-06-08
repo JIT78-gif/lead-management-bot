@@ -89,6 +89,22 @@ export const config = {
     digestRecipient: optional('DIGEST_RECIPIENT', ''),
   },
 
+  // TESTING — Indian phone numbers listed here get treated as
+  // international leads, so they go through the Google Meet booking
+  // flow instead of the phone-call close. Use this to test the
+  // international flow end-to-end with your own +91 number before
+  // pointing real overseas ad spend at the bot.
+  //
+  // Format: comma-separated digits-only phones (with country code,
+  // no leading +). Example: TEST_INTERNATIONAL_PHONES=919876543210,919812345678
+  // Leave empty to disable (production-default).
+  testing: {
+    forceInternationalPhones: optional('TEST_INTERNATIONAL_PHONES', '')
+      .split(',')
+      .map((s) => s.trim().replace(/\D/g, ''))
+      .filter((s) => s.length >= 8),
+  },
+
   // Phase 8 — Google Calendar OAuth + Meet auto-booking for
   // international leads. Leave clientId blank to disable the feature
   // entirely (bot falls back to Phase 7 manual flow).

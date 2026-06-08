@@ -76,16 +76,20 @@ function formatNotification(leadPhone: string, data: LeadData): string {
   if (!country.isIndia) {
     lines.push('');
     if (meetLink && meetProposedIso) {
-      const when = new Date(meetProposedIso).toLocaleString('en-IN', {
-        timeZone: 'Asia/Kolkata',
-        weekday: 'short',
-        day: 'numeric',
-        month: 'short',
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      });
-      lines.push(`📅 Booked: ${when} IST`);
+      const fmt = (tz: string) =>
+        new Date(meetProposedIso).toLocaleString('en-IN', {
+          timeZone: tz,
+          weekday: 'short',
+          day: 'numeric',
+          month: 'short',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+      lines.push(`📅 Booked (your time, IST): ${fmt('Asia/Kolkata')}`);
+      // Customer's local view of the same moment so the owner knows
+      // exactly what the customer is seeing on their end.
+      lines.push(`   Customer's time (${country.name}): ${fmt(country.timezone)}`);
       lines.push(`🔗 Meet link: ${meetLink}`);
       if (customerEmail) lines.push(`📧 Invite sent to: ${customerEmail}`);
     } else if (data.meet_preferred_time) {

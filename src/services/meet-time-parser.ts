@@ -44,27 +44,34 @@ You convert a customer's natural-language description of a desired meeting
 time into a precise ISO 8601 UTC datetime. Output strict JSON only.
 
 You will receive:
-  - the customer's text (e.g. "Tuesday 4 PM Dubai time", "tomorrow 10am",
-    "next Wed 2pm EST")
+  - the customer's text (e.g. "Tuesday 4 PM", "tomorrow 10am",
+    "next Wed 2pm AEST")
   - the current UTC datetime ("now")
-  - the assumed default timezone if the customer doesn't mention one
+  - the customer's LOCAL timezone (default_timezone). When the customer
+    does NOT mention a timezone in their text, assume they mean THEIR
+    OWN local time, not UTC, not the system's, not the bot owner's.
 
 Rules:
   - If the customer's text is a clear date+time (or relative time), set
     ok=true and return:
       iso_datetime: the UTC ISO string (e.g. "2026-06-09T13:00:00Z")
-      timezone_label: a human-readable timezone label they referred to
-                      (e.g. "Asia/Dubai", "America/New_York", or
-                      "default" if they didn't say one)
-      human: a short friendly echo (e.g. "Tue 4 PM Dubai time")
+      timezone_label: a human-readable IANA-ish timezone label. If the
+                      customer named one explicitly ("AEST", "EST",
+                      "Dubai time"), use that timezone. Otherwise use
+                      the default_timezone you were given.
+      human: a short friendly echo formatted in the SAME timezone you
+             used for parsing (e.g. "Tue 4 PM Dubai time" if default
+             was Asia/Dubai). This is what the bot echoes back to the
+             customer — they should recognise their own stated time.
   - If they gave only a time but no date ("at 4 PM") and you can't pick
     today/tomorrow safely → ok=false, reason="ambiguous_no_date".
   - If the resulting datetime is in the past → ok=false, reason="in_past".
   - If you can't parse the text at all → ok=false, reason="unparseable".
   - When ok=false the parsed fields should be null.
 
-NEVER invent a time the customer didn't say. Be conservative; ambiguous
-is better than wrong.
+NEVER invent a time the customer didn't say. NEVER convert silently to
+the owner's timezone — keep the customer's intended local time as the
+source of truth. Be conservative; ambiguous is better than wrong.
 `.trim();
 
 export async function parseMeetTime(
