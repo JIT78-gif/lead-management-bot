@@ -89,6 +89,16 @@ export const config = {
     digestRecipient: optional('DIGEST_RECIPIENT', ''),
   },
 
+  // CONVERSATION BEHAVIOR — when a customer sends a bare greeting
+  // (hi/hello/hey/etc.) AND the bot's last reply was more than this
+  // many hours ago AND the conversation isn't already qualified or
+  // disqualified, the server soft-resets the conversation to a fresh
+  // qualifying state. The customer gets a clean step-1 greeting back.
+  // Set to 0 to disable the soft-reset.
+  conversation: {
+    freshGreetingGapHours: Number(optional('FRESH_GREETING_GAP_HOURS', '12')),
+  },
+
   // TESTING — Indian phone numbers listed here get treated as
   // international leads, so they go through the Google Meet booking
   // flow instead of the phone-call close. Use this to test the

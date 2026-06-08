@@ -11,9 +11,11 @@ import {
   applyStatusUpdate,
   getConversation,
   getOrCreateConversation,
+  lastOutboundAt,
   listMessages,
   saveQualifiedLead,
   setConversationRouting,
+  softResetConversation,
   updateConversation,
   type ConversationState,
 } from '../services/leads.js';
@@ -23,6 +25,7 @@ import { detectCountry } from '../services/country-detect.js';
 import { detectNiche } from '../services/niche-detect.js';
 import { isConnected as googleConnected } from '../services/google-oauth.js';
 import { advanceBooking, startBooking } from '../services/meet-booking.js';
+import { isBareGreeting } from '../services/greeting-detect.js';
 import { chooseBestName, normaliseDisplayName } from '../services/name-sanitize.js';
 
 const FALLBACK_REPLY =
@@ -140,11 +143,28 @@ async function processMessage(
   // as international (Meet booking flow) regardless of their actual
   // country code. Used to dry-run the international flow with an
   // Indian +91 number before pointing real overseas ads at the bot.
-  if (config.testing.forceInternationalPhones.includes(msg.phone)) {
+  //
+  // We ALWAYS log this section (match or no match) on every brand-new
+  // chat so Easypanel logs make it obvious whether the override is
+  // working — saves debugging time when it silently fails because
+  // the env var didn't load.
+  const forceList = config.testing.forceInternationalPhones;
+  const overrideMatched = forceList.includes(msg.phone);
+  if (overrideMatched) {
     routedCountry = { ...routedCountry, isIndia: false };
+  }
+  if (isBrandNewChat || overrideMatched) {
     log.info(
-      { phone: msg.phone },
-      'TEST override: routing this Indian number as international'
+      {
+        phone: msg.phone,
+        forceList,
+        matched: overrideMatched,
+        detectedCode: routedCountry.code,
+        routedAs: routedCountry.isIndia ? 'india' : 'non-india',
+      },
+      overrideMatched
+        ? 'TEST override: phone matched force list, routing as non-india'
+        : 'TEST override: phone NOT in force list, normal routing'
     );
   }
   if (isBrandNewChat) {
@@ -162,6 +182,36 @@ async function processMessage(
     }
     if (conv.niche) {
       routedNiche = conv.niche as ReturnType<typeof detectNiche>;
+    }
+  }
+
+  // Phase 9 — soft-reset on stale greeting. If the customer returns
+  // after a long gap with just "hi", treat it as a fresh start:
+  // reset conversation state to qualifying + clear collected, but
+  // keep the message history (dashboard / chats view still shows it).
+  // The flag below also tells runTurn to force the step-1 greeting
+  // branch in the prompt's flowHint.
+  let forceFreshGreeting = false;
+  const gapHours = config.conversation.freshGreetingGapHours;
+  if (
+    gapHours > 0 &&
+    !isBrandNewChat &&
+    isBareGreeting(msg.text) &&
+    (conv.state === 'qualifying' || conv.state === 'collecting')
+  ) {
+    const lastOut = lastOutboundAt(msg.phone);
+    const gapMs = lastOut !== null ? Date.now() - lastOut : null;
+    const thresholdMs = gapHours * 60 * 60 * 1000;
+    if (gapMs === null || gapMs >= thresholdMs) {
+      softResetConversation(msg.phone);
+      forceFreshGreeting = true;
+      log.info(
+        { phone: msg.phone, gapMs, thresholdMs, prevState: conv.state },
+        'soft-reset: stale greeting, restarting qualifying flow'
+      );
+      // Re-fetch the conversation so downstream code sees the cleared state.
+      const fresh = getConversation(msg.phone);
+      if (fresh) Object.assign(conv, fresh);
     }
   }
 
@@ -296,7 +346,8 @@ async function processMessage(
       msg.whatsappName ?? conv.whatsapp_name,
       conv.state,
       log,
-      { country: routedCountry, niche: routedNiche }
+      { country: routedCountry, niche: routedNiche },
+      { forceFreshGreeting }
     );
   } catch (err) {
     // Gemini fully failed (twice) — apologise so the customer isn't stranded.

@@ -500,6 +500,45 @@ const stmtDeleteMessagesByPhone = db.prepare<[string]>('DELETE FROM messages WHE
 const stmtDeleteLeadByPhone = db.prepare<[string]>('DELETE FROM leads WHERE phone = ?');
 const stmtDeleteConversationByPhone = db.prepare<[string]>('DELETE FROM conversations WHERE phone = ?');
 
+/**
+ * Phase 9 — soft reset. Resets the conversation state back to
+ * 'qualifying' and clears the collected data blob, BUT keeps the
+ * message history intact so the dashboard / chats view still shows
+ * the prior exchange. Used when a customer returns after a long gap
+ * with a fresh "hi" — we want a clean qualifying start without
+ * losing the audit trail.
+ */
+const stmtSoftResetConversation = db.prepare(
+  `UPDATE conversations
+      SET state               = 'qualifying',
+          collected           = '{}',
+          meet_status         = NULL,
+          meet_proposed_iso   = NULL,
+          meet_event_id       = NULL,
+          meet_link           = NULL,
+          updated_at          = @ts
+    WHERE phone = @phone`
+);
+
+export function softResetConversation(phone: string): void {
+  stmtSoftResetConversation.run({ phone, ts: now() });
+}
+
+const stmtLastOutboundAt = db.prepare<[string], { created_at: number }>(
+  `SELECT MAX(created_at) AS created_at FROM messages
+    WHERE phone = ? AND direction = 'out'`
+);
+
+/**
+ * Returns the timestamp (ms epoch) of the most recent bot/human
+ * outbound message for this phone, or null if the bot has never
+ * replied to them. Used by the Phase 9 soft-reset gap check.
+ */
+export function lastOutboundAt(phone: string): number | null {
+  const row = stmtLastOutboundAt.get(phone);
+  return row?.created_at ?? null;
+}
+
 export function resetConversation(phone: string): {
   conversation: number;
   messages: number;

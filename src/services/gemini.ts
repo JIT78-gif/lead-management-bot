@@ -61,25 +61,38 @@ function historyToContents(
   history: MessageRow[],
   whatsappName: string | null,
   currentState: string,
-  routing: RoutingContext | null
+  routing: RoutingContext | null,
+  forceFreshGreeting: boolean
 ): LLMTurn[] {
   const contents: LLMTurn[] = [];
 
   // Count how many bot replies are in the history so the model knows
   // whether this is its FIRST turn (must greet) or a later turn (already
-  // greeted, advance the flow).
+  // greeted, advance the flow). When forceFreshGreeting is true (Phase 9
+  // soft-reset), we override and tell Gemini to greet again as if fresh
+  // — even though history shows prior bot replies, the customer just
+  // restarted with "hi" after a long gap.
   const botRepliesSoFar = history.filter((m) => m.direction === 'out').length;
-  const isFirstReply = botRepliesSoFar === 0;
+  const isFirstReply = botRepliesSoFar === 0 || forceFreshGreeting;
 
   const flowHint = isFirstReply
-    ? 'THIS IS YOUR FIRST REPLY IN THE CONVERSATION. ' +
-      'You MUST reply with the step-1 greeting verbatim. ' +
-      'Set ALL data fields to null. Do NOT skip ahead. Do NOT infer ' +
-      'industry, name, or anything else from the customer\'s first message.'
+    ? (forceFreshGreeting
+        ? 'THE CUSTOMER JUST RESTARTED THE CONVERSATION with a fresh ' +
+          'greeting after a long gap. Treat this as your first reply — ' +
+          'send the step-1 greeting verbatim. Set ALL data fields to null. ' +
+          'Ignore any prior bot messages in history; they were from a ' +
+          'previous session.'
+        : 'THIS IS YOUR FIRST REPLY IN THE CONVERSATION. ' +
+          'You MUST reply with the step-1 greeting verbatim. ' +
+          'Set ALL data fields to null. Do NOT skip ahead. Do NOT infer ' +
+          'industry, name, or anything else from the customer\'s first message.')
     : `You have already sent ${botRepliesSoFar} reply/replies in this ` +
-      'conversation. Look at your previous bot messages above to figure ' +
-      'out which flow step you are on, and proceed with the NEXT step. ' +
-      'Do not repeat a step you have already completed.';
+      'conversation. READ THE CUSTOMER\'S LATEST MESSAGE CAREFULLY ' +
+      'before deciding what to do (see "READ THE CUSTOMER\'S LATEST ' +
+      'MESSAGE FIRST" section of the system prompt). Do NOT blindly ' +
+      'march to the next field. Do NOT say "Got it" / "Great" / ' +
+      '"Perfect" if the customer didn\'t actually give you anything ' +
+      'to acknowledge.';
 
   // Phase 7 routing hint — the bot reads these to pick the right
   // niche-specific extra question (step 5b) and the right close (phone
@@ -201,9 +214,11 @@ export async function runTurn(
   whatsappName: string | null,
   currentState: string,
   log?: { warn?: (...a: unknown[]) => void; info?: (...a: unknown[]) => void },
-  routing: RoutingContext | null = null
+  routing: RoutingContext | null = null,
+  options: { forceFreshGreeting?: boolean } = {}
 ): Promise<BotTurn> {
-  const contents = historyToContents(history, whatsappName, currentState, routing);
+  const forceFreshGreeting = options.forceFreshGreeting ?? false;
+  const contents = historyToContents(history, whatsappName, currentState, routing, forceFreshGreeting);
   try {
     return await callOnce(contents, log);
   } catch (err) {
