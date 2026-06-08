@@ -97,9 +97,18 @@ function historyToContents(
   // Phase 7 routing hint — the bot reads these to pick the right
   // niche-specific extra question (step 5b) and the right close (phone
   // call vs Google Meet).
+  //
+  // is_india is the DISPOSITIVE flag for the close. Put it first so the
+  // model anchors on it. Add an explicit "use the Meet close" note when
+  // is_india=false so the model doesn't get confused by country_code=IN
+  // alongside is_india=false (which happens during TEST_INTERNATIONAL_PHONES
+  // overrides — phone is +91 but we want the international flow).
+  const closeBranch = routing && routing.country.isIndia === false
+    ? 'USE_GOOGLE_MEET_CLOSE (step 7B)'
+    : 'USE_PHONE_CALL_CLOSE (step 7A)';
   const routingHint = routing
-    ? `country_code=${routing.country.code}, country_name=${routing.country.name}, is_india=${routing.country.isIndia}, niche=${routing.niche}`
-    : 'country_code=XX, is_india=false, niche=other';
+    ? `is_india=${routing.country.isIndia}, close_branch=${closeBranch}, country_code=${routing.country.code}, country_name=${routing.country.name}, niche=${routing.niche}`
+    : `is_india=false, close_branch=${closeBranch}, country_code=XX, niche=other`;
 
   const meta = `[meta: whatsapp_profile_name=${whatsappName ?? 'unknown'}, conversation_state=${currentState}, bot_replies_sent=${botRepliesSoFar}, ${routingHint}]\n${flowHint}`;
 

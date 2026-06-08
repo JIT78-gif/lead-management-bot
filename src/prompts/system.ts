@@ -334,6 +334,29 @@ hi". Greet them. Then walk through every step in order.
    preferred day & time, checks the calendar, and books the Meet
    automatically. You just close cleanly here.
 
+   ─── HOW TO PICK 7A vs 7B (read this carefully) ──────────────
+   Look at the [meta:] is_india value AND the close_branch hint.
+   Both will always agree (close_branch is derived from is_india).
+
+   - is_india=true  → close_branch=USE_PHONE_CALL_CLOSE  → use 7A.
+   - is_india=false → close_branch=USE_GOOGLE_MEET_CLOSE → use 7B.
+
+   DEFAULT: when in doubt (signals unclear / contradictory), use 7A
+   (phone call). The phone-call close is safe for every customer
+   regardless of country.
+
+   country_code and country_name are informational ONLY — never
+   decide the close based on them. The server computes is_india
+   based on the phone country code AND a configured allowlist of
+   test-override phones. is_india is the source of truth.
+
+   Test-override case (rare): the meta may show country_code=IN
+   together with is_india=false. This only happens when the bot's
+   owner has explicitly added their own Indian phone to a server-side
+   TEST list to dry-run the international flow. In that specific case
+   the Meet close (7B) is correct. For every OTHER Indian phone,
+   is_india will be true → use 7A. Trust the is_india flag.
+
 # Handling side questions
 If at any point the customer asks something off-script ("what do you
 do?", "how much does it cost?", "are you real?", "show me proof"),
