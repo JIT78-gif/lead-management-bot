@@ -190,6 +190,31 @@ export async function cancelEvent(eventId: string): Promise<void> {
   });
 }
 
+/**
+ * Public wrapper: is the slot [startISO, startISO+durationMin) inside
+ * the owner's configured working window? Same logic findNextFreeSlot
+ * uses internally, exposed here so the booking state machine can
+ * reject customer-requested times that fall in the dead zone (e.g. a
+ * customer asks for 4 AM IST) WITHOUT making a Google API call.
+ */
+export function isWithinWorkingHours(
+  startISO: string,
+  durationMin: number = config.google.meetDurationMinutes
+): boolean {
+  const tz = config.google.workingTimezone;
+  const workingDays = new Set<DayName>(config.google.workingDays as DayName[]);
+  const [startH, startM] = parseHHMM(config.google.workingHoursStart);
+  const [endH, endM] = parseHHMM(config.google.workingHoursEnd);
+  return slotWithinWorkingWindow(
+    new Date(startISO),
+    durationMin,
+    tz,
+    workingDays,
+    startH, startM,
+    endH, endM
+  );
+}
+
 // ─── helpers ──────────────────────────────────────────────────────
 
 function parseHHMM(s: string): [number, number] {
@@ -203,9 +228,16 @@ function parseHHMM(s: string): [number, number] {
  * Returns true when the slot [start, start+duration) lies entirely
  * inside the working window on a working day, evaluated in `tz`.
  *
+ * Supports BOTH same-day windows (e.g. 09:00 → 20:00) and overnight
+ * windows that wrap past midnight (e.g. 09:00 → 02:00 next morning).
+ * The overnight mode is useful for international Meet booking where
+ * the owner is happy to take a 1 AM call to match a US-evening client.
+ *
+ * Detection: if windowEnd <= windowStart in minutes, the window wraps.
+ *
  * Uses Intl.DateTimeFormat to figure out the local hour/minute/day
- * without bringing in a TZ library. The cost is one Intl call per
- * slot evaluated — fine for a 14-day, 30-min-grid search.
+ * without a TZ library. One Intl call per slot evaluated — fine for
+ * a 14-day, 30-min-grid search.
  */
 function slotWithinWorkingWindow(
   start: Date,
@@ -220,15 +252,52 @@ function slotWithinWorkingWindow(
   const localStart = getLocalParts(start, tz);
   const localEnd = getLocalParts(new Date(start.getTime() + durationMin * 60 * 1000), tz);
 
-  if (!workingDays.has(localStart.day) || !workingDays.has(localEnd.day)) return false;
-  if (localStart.day !== localEnd.day) return false; // don't straddle midnight
-
   const localStartMin = localStart.hour * 60 + localStart.minute;
   const localEndMin = localEnd.hour * 60 + localEnd.minute;
   const windowStart = startH * 60 + startM;
   const windowEnd = endH * 60 + endM;
 
-  return localStartMin >= windowStart && localEndMin <= windowEnd;
+  const overnight = windowEnd <= windowStart;
+
+  if (!overnight) {
+    // Same-day window — slot must stay on one working day and inside
+    // [windowStart, windowEnd].
+    if (!workingDays.has(localStart.day)) return false;
+    if (localStart.day !== localEnd.day) return false;
+    return localStartMin >= windowStart && localEndMin <= windowEnd;
+  }
+
+  // Overnight window. The "business day" for a slot is the working day
+  // it BEGAN on — e.g. 1 AM Tuesday belongs to Monday's business
+  // window if Monday → Tuesday 02:00 was the configured run.
+  //
+  // Case A: slot starts in the EVENING half (>= windowStart on a
+  // working day). It must either stay on the same calendar day, OR
+  // end inside the early-morning extension (<= windowEnd) on the day
+  // after.
+  if (workingDays.has(localStart.day) && localStartMin >= windowStart) {
+    if (localStart.day === localEnd.day) return true;
+    return localEndMin <= windowEnd; // crossed midnight, must end inside extension
+  }
+
+  // Case B: slot is entirely in the EARLY-MORNING extension of a
+  // PREVIOUS working day. localStart and localEnd are both on the
+  // same calendar day, both <= windowEnd, and yesterday is in
+  // workingDays.
+  if (
+    localStart.day === localEnd.day &&
+    localStartMin < windowEnd &&
+    localEndMin <= windowEnd
+  ) {
+    return workingDays.has(prevDay(localStart.day));
+  }
+
+  return false;
+}
+
+function prevDay(d: DayName): DayName {
+  const idx = DAY_NAMES.indexOf(d);
+  return DAY_NAMES[(idx + 6) % 7] as DayName;
 }
 
 function getLocalParts(d: Date, tz: string): { day: DayName; hour: number; minute: number } {

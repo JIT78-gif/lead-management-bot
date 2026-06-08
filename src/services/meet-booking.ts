@@ -1,12 +1,15 @@
 import type { FastifyBaseLogger } from 'fastify';
 import { config } from '../config.js';
+import { Type } from '@google/genai';
 import {
   addAttendee,
   cancelEvent,
   createMeet,
   findNextFreeSlot,
   isFree,
+  isWithinWorkingHours,
 } from './google-calendar.js';
+import { callJsonModel } from './llm.js';
 import { parseMeetTime } from './meet-time-parser.js';
 import {
   setCustomerEmail,
@@ -71,6 +74,89 @@ function meetSummary(name: string | null, countryCode: string | null): string {
   const n = name?.trim() || 'Botifys lead';
   const c = countryCode && countryCode !== 'XX' ? ` (${countryCode})` : '';
   return `Botifys discovery call — ${n}${c}`;
+}
+
+/**
+ * Compose a natural WhatsApp reply when the customer's requested time
+ * falls outside our working window. Goes through Gemini so the wording
+ * mirrors their language (English / Hindi / Hinglish) and feels human
+ * rather than a templated rejection. Falls back to a hard-coded
+ * sentence if the LLM call fails.
+ *
+ * Always names BOTH times in BOTH timezones (customer's local + IST)
+ * so the customer can see what we mean.
+ */
+async function composeOutOfHoursReply(args: {
+  customerLanguageSample: string;
+  customerTz: string;
+  requestedISO: string;
+  alternativeISO: string;
+  workingHoursStart: string;
+  workingHoursEnd: string;
+}): Promise<string> {
+  const reqLocal = formatHumanTime(args.requestedISO, args.customerTz);
+  const reqIst = formatHumanTime(args.requestedISO, config.google.workingTimezone);
+  const altLocal = formatHumanTime(args.alternativeISO, args.customerTz);
+  const altIst = formatHumanTime(args.alternativeISO, config.google.workingTimezone);
+
+  const SYSTEM = `
+You are the Botifys WhatsApp bot composing a single short reply to a customer
+who proposed a meeting time that falls outside the team's working hours.
+
+Compose ONE friendly WhatsApp message that:
+  1. Acknowledges their proposed time naturally (show their time and our IST time).
+  2. Explains briefly that the team is available from ${args.workingHoursStart} to
+     ${args.workingHoursEnd} IST. No apology — just factual.
+  3. Proposes the specific alternative (show their time and our IST time too).
+  4. Asks them to confirm OR suggest another time.
+
+Rules:
+  - Tone: friendly, brief. 3 to 5 sentences max.
+  - Mirror the customer's language from the language sample (English / Hindi /
+    Hinglish). Match their casual/formal register.
+  - Use ASCII punctuation only: . , ! ? : ; ' " ( ) -
+  - Do NOT use em-dashes or en-dashes.
+  - Show times exactly as given to you; don't paraphrase the dates.
+
+Return strict JSON: { "reply": "<single string>" }
+  `.trim();
+
+  const userBlock = `
+Customer's recent message (language sample):
+${args.customerLanguageSample}
+
+Customer's proposed time:
+  - their local time: ${reqLocal}
+  - our team's time (IST): ${reqIst} IST
+
+Alternative we want to suggest (free + within our working hours):
+  - their local time: ${altLocal}
+  - our team's time (IST): ${altIst} IST
+  `.trim();
+
+  try {
+    const { text } = await callJsonModel({
+      systemInstruction: SYSTEM,
+      contents: [{ role: 'user', text: userBlock }],
+      responseSchema: {
+        type: Type.OBJECT,
+        properties: { reply: { type: Type.STRING } },
+        required: ['reply'],
+      },
+      temperature: 0.5,
+    });
+    const parsed = JSON.parse(text) as { reply?: string };
+    if (parsed.reply && parsed.reply.trim() !== '') return parsed.reply.trim();
+  } catch {
+    // fall through to template
+  }
+
+  // Deterministic fallback so this branch never returns nothing.
+  return (
+    `${reqLocal} (${reqIst} IST) is outside our team's working hours ` +
+    `(${args.workingHoursStart} to ${args.workingHoursEnd} IST). ` +
+    `How about ${altLocal} (${altIst} IST) instead? Or suggest another time that works for you.`
+  );
 }
 
 function formatHumanTime(iso: string, tz: string): string {
@@ -167,6 +253,44 @@ async function handleAwaitingTime(
   const durMin = config.google.meetDurationMinutes;
   const startISO = parsed.iso_datetime;
   const endISO = new Date(new Date(startISO).getTime() + durMin * 60 * 1000).toISOString();
+
+  // First, working-hours check. Even if the calendar happens to be free
+  // at e.g. 4 AM IST, we don't want the bot booking sleep hours. Reject
+  // those up-front with a Gemini-composed reply that shows both
+  // timezones and proposes an alternative.
+  if (!isWithinWorkingHours(startISO, durMin)) {
+    log.info(
+      { phone: conv.phone, startISO, customerTz },
+      'requested time outside working hours, finding alternative'
+    );
+    let alt: string | null = null;
+    try {
+      alt = await findNextFreeSlot(startISO, durMin);
+    } catch (err) {
+      log.warn({ err, phone: conv.phone }, 'findNextFreeSlot failed; falling back to manual');
+      setMeetStatus(conv.phone, 'fallback_manual');
+      return { kind: 'fallback_manual', text: parsed.human };
+    }
+    if (!alt) {
+      setMeetStatus(conv.phone, 'fallback_manual');
+      return { kind: 'fallback_manual', text: parsed.human };
+    }
+    setMeetEvent(conv.phone, {
+      eventId: null,
+      link: null,
+      iso: alt,
+      status: 'awaiting_alt_confirm',
+    });
+    const replyText = await composeOutOfHoursReply({
+      customerLanguageSample: customerText,
+      customerTz,
+      requestedISO: startISO,
+      alternativeISO: alt,
+      workingHoursStart: config.google.workingHoursStart,
+      workingHoursEnd: config.google.workingHoursEnd,
+    });
+    return { kind: 'reply', text: replyText };
+  }
 
   let free: boolean;
   try {
