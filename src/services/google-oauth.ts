@@ -22,7 +22,16 @@ import { config } from '../config.js';
  * should fall back to the Phase 7 manual flow.
  */
 
-const SCOPES = ['https://www.googleapis.com/auth/calendar'];
+// Calendar: the whole reason we're connecting — book / read events
+// in the owner's calendar.
+// userinfo.email: lets us call oauth2.userinfo.get() right after the
+// token exchange to learn which account just authorized (we store it
+// on google_oauth.account_email so the Settings page can say "Connected
+// as foo@gmail.com"). Without this, that call returns 401.
+const SCOPES = [
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/userinfo.email',
+];
 
 interface OAuthRow {
   account_email: string;
