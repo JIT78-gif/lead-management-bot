@@ -64,10 +64,12 @@ CREATE TABLE IF NOT EXISTS leads (
 );
 
 CREATE INDEX IF NOT EXISTS idx_leads_status   ON leads(status);
-CREATE INDEX IF NOT EXISTS idx_leads_country  ON leads(country_code);
-CREATE INDEX IF NOT EXISTS idx_leads_niche    ON leads(niche);
 CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
 CREATE INDEX IF NOT EXISTS idx_messages_phone_created ON messages(phone, created_at);
+-- NOTE: idx_leads_country and idx_leads_niche live in src/db/migrations.ts
+-- so they get created AFTER addColumnIfMissing() runs. Otherwise an
+-- existing database (created before Phase 7 added the columns) would
+-- fail this schema execution with "no such column: country_code".
 
 CREATE TABLE IF NOT EXISTS calls (
   id                   INTEGER PRIMARY KEY AUTOINCREMENT,
