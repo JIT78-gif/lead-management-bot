@@ -27,6 +27,14 @@ export const LEAD_STATUSES: readonly LeadStatus[] = [
   'lost',
 ] as const;
 
+export type MeetStatus =
+  | 'awaiting_time'
+  | 'awaiting_alt_confirm'
+  | 'awaiting_email'
+  | 'confirmed'
+  | 'failed'
+  | 'fallback_manual';
+
 export interface ConversationRow {
   phone: string;
   whatsapp_name: string | null;
@@ -34,6 +42,17 @@ export interface ConversationRow {
   collected: string;
   bot_paused: number; // 0 / 1 — SQLite has no bool
   notes: string | null;
+  // Phase 7
+  country_code: string | null;
+  niche: string | null;
+  niche_detail: string | null;
+  meet_preferred_time: string | null;
+  // Phase 8 — server-side international Meet booking sub-state.
+  meet_status: MeetStatus | null;
+  meet_proposed_iso: string | null;
+  meet_event_id: string | null;
+  meet_link: string | null;
+  customer_email: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -44,6 +63,9 @@ export interface LeadData {
   team_size: TeamSize | null;
   website_url: string | null;
   social_handle: string | null;
+  // Phase 7 — captured by the bot during the international flow.
+  niche_detail?: string | null;
+  meet_preferred_time?: string | null;
 }
 
 export interface LeadRow {
@@ -57,6 +79,15 @@ export interface LeadRow {
   status: LeadStatus;
   notes: string | null;
   last_status_change_at: number | null;
+  // Phase 7 — mirrored from the conversation on save.
+  country_code: string | null;
+  niche: string | null;
+  niche_detail: string | null;
+  meet_preferred_time: string | null;
+  // Phase 8 — mirrored Meet booking
+  meet_event_id: string | null;
+  meet_link: string | null;
+  customer_email: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -174,16 +205,36 @@ const stmtListMessages = db.prepare<[string]>(
     WHERE phone = ? ORDER BY id ASC`
 );
 
+// Phase 7+8: on save, snapshot routing + booking fields from the
+// conversations row into the leads row so the Leads-tab filters work
+// without an extra join.
 const stmtUpsertLead = db.prepare(
-  `INSERT INTO leads (phone, name, industry, team_size, website_url, social_handle, status, created_at, updated_at)
-   VALUES (@phone, @name, @industry, @team_size, @website_url, @social_handle, 'new_qualified', @created_at, @updated_at)
+  `INSERT INTO leads (
+     phone, name, industry, team_size, website_url, social_handle,
+     country_code, niche, niche_detail, meet_preferred_time,
+     meet_event_id, meet_link, customer_email,
+     status, created_at, updated_at
+   )
+   VALUES (
+     @phone, @name, @industry, @team_size, @website_url, @social_handle,
+     @country_code, @niche, @niche_detail, @meet_preferred_time,
+     @meet_event_id, @meet_link, @customer_email,
+     'new_qualified', @created_at, @updated_at
+   )
    ON CONFLICT(phone) DO UPDATE SET
-     name = excluded.name,
-     industry = excluded.industry,
-     team_size = excluded.team_size,
-     website_url = excluded.website_url,
-     social_handle = excluded.social_handle,
-     updated_at = excluded.updated_at`
+     name                = excluded.name,
+     industry            = excluded.industry,
+     team_size           = excluded.team_size,
+     website_url         = excluded.website_url,
+     social_handle       = excluded.social_handle,
+     country_code        = COALESCE(excluded.country_code,        leads.country_code),
+     niche               = COALESCE(excluded.niche,               leads.niche),
+     niche_detail        = COALESCE(excluded.niche_detail,        leads.niche_detail),
+     meet_preferred_time = COALESCE(excluded.meet_preferred_time, leads.meet_preferred_time),
+     meet_event_id       = COALESCE(excluded.meet_event_id,       leads.meet_event_id),
+     meet_link           = COALESCE(excluded.meet_link,           leads.meet_link),
+     customer_email      = COALESCE(excluded.customer_email,      leads.customer_email),
+     updated_at          = excluded.updated_at`
 );
 
 export function getConversation(phone: string): ConversationRow | undefined {
@@ -277,6 +328,36 @@ export function setConversationNotes(phone: string, notes: string | null): void 
 }
 
 /**
+ * Phase 7 — Stamp the conversation row with its detected country + niche
+ * the very first time we see this phone. Both come from cheap
+ * server-side detection in webhook.ts (no LLM round-trip).
+ *
+ * Safe to call repeatedly; only sets when the existing value is NULL so
+ * a salesperson can override later via the dashboard without us
+ * clobbering it on the next inbound.
+ */
+const stmtSetConversationRouting = db.prepare(
+  `UPDATE conversations
+      SET country_code = COALESCE(country_code, @country_code),
+          niche        = COALESCE(niche,        @niche),
+          updated_at   = @ts
+    WHERE phone = @phone`
+);
+
+export function setConversationRouting(
+  phone: string,
+  countryCode: string | null,
+  niche: string | null
+): void {
+  stmtSetConversationRouting.run({
+    phone,
+    country_code: countryCode,
+    niche,
+    ts: now(),
+  });
+}
+
+/**
  * Manually flip a conversation to qualified or disqualified — used by the
  * salesperson from the chat detail page after they've called the customer
  * outside of the WhatsApp flow. This bypasses Gemini and lets a human
@@ -329,6 +410,54 @@ export function manuallyQualify(phone: string): boolean {
   });
   tx();
   return true;
+}
+
+/**
+ * Phase 8 — booking state machine writes. One helper per discrete
+ * transition to keep the state machine code readable.
+ */
+const stmtSetMeetStatus = db.prepare(
+  `UPDATE conversations
+      SET meet_status = @status, updated_at = @ts
+    WHERE phone = @phone`
+);
+
+export function setMeetStatus(phone: string, status: MeetStatus | null): void {
+  stmtSetMeetStatus.run({ phone, status, ts: now() });
+}
+
+const stmtSetMeetEvent = db.prepare(
+  `UPDATE conversations
+      SET meet_event_id     = @event_id,
+          meet_link         = @link,
+          meet_proposed_iso = @iso,
+          meet_status       = @status,
+          updated_at        = @ts
+    WHERE phone = @phone`
+);
+
+export function setMeetEvent(
+  phone: string,
+  args: { eventId: string | null; link: string | null; iso: string | null; status: MeetStatus | null }
+): void {
+  stmtSetMeetEvent.run({
+    phone,
+    event_id: args.eventId,
+    link: args.link,
+    iso: args.iso,
+    status: args.status,
+    ts: now(),
+  });
+}
+
+const stmtSetCustomerEmail = db.prepare(
+  `UPDATE conversations
+      SET customer_email = @email, updated_at = @ts
+    WHERE phone = @phone`
+);
+
+export function setCustomerEmail(phone: string, email: string | null): void {
+  stmtSetCustomerEmail.run({ phone, email, ts: now() });
 }
 
 export function manuallyDisqualify(phone: string): boolean {
@@ -389,6 +518,15 @@ export function resetConversation(phone: string): {
 
 export function saveQualifiedLead(phone: string, data: LeadData): void {
   const ts = now();
+  // Mirror Phase 7 routing fields from the conversation row. The bot may
+  // also have captured fresh niche_detail / meet_preferred_time during
+  // this turn — prefer the bot's value when present (it's more recent
+  // and comes from the customer directly).
+  const conv = getConversation(phone);
+  const niche_detail =
+    data.niche_detail ?? conv?.niche_detail ?? null;
+  const meet_preferred_time =
+    data.meet_preferred_time ?? conv?.meet_preferred_time ?? null;
   stmtUpsertLead.run({
     phone,
     name: data.name,
@@ -396,9 +534,28 @@ export function saveQualifiedLead(phone: string, data: LeadData): void {
     team_size: data.team_size,
     website_url: data.website_url,
     social_handle: data.social_handle,
+    country_code: conv?.country_code ?? null,
+    niche: conv?.niche ?? null,
+    niche_detail,
+    meet_preferred_time,
+    meet_event_id: conv?.meet_event_id ?? null,
+    meet_link: conv?.meet_link ?? null,
+    customer_email: conv?.customer_email ?? null,
     created_at: ts,
     updated_at: ts,
   });
+
+  // Also stamp the conversation row so the chats view shows the latest
+  // detail / meet time that the bot captured.
+  if (niche_detail !== null || meet_preferred_time !== null) {
+    db.prepare(
+      `UPDATE conversations
+          SET niche_detail        = COALESCE(@niche_detail, niche_detail),
+              meet_preferred_time = COALESCE(@meet_preferred_time, meet_preferred_time),
+              updated_at          = @ts
+        WHERE phone = @phone`
+    ).run({ phone, niche_detail, meet_preferred_time, ts });
+  }
 }
 
 // --- Phase 2 dashboard queries ---

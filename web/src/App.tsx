@@ -41,6 +41,7 @@ export default function App() {
             <TabLink to="/" end label="Leads" />
             <TabLink to="/chats" label="Chats" />
             <TabLink to="/stats" label="Stats" />
+            <TabLink to="/settings" label="Settings" />
           </nav>
 
           {/* Actions */}

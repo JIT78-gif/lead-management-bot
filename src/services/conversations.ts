@@ -45,6 +45,9 @@ export interface ConversationListRow {
   is_stalled: boolean;
   is_waiting_on_bot: boolean;
   bot_paused: boolean;
+  // Phase 7
+  country_code: string | null;
+  niche: string | null;
 }
 
 interface RawRow {
@@ -54,6 +57,8 @@ interface RawRow {
   created_at: number;
   updated_at: number;
   bot_paused: number;
+  country_code: string | null;
+  niche: string | null;
   inbound_count: number;
   outbound_count: number;
   last_message_at: number | null;
@@ -75,6 +80,8 @@ const stmtListConversations = db.prepare(
      c.created_at,
      c.updated_at,
      c.bot_paused,
+     c.country_code,
+     c.niche,
      (SELECT COUNT(*)  FROM messages m WHERE m.phone = c.phone AND m.direction = 'in')           AS inbound_count,
      (SELECT COUNT(*)  FROM messages m WHERE m.phone = c.phone AND m.direction = 'out')          AS outbound_count,
      (SELECT MAX(created_at) FROM messages m WHERE m.phone = c.phone)                            AS last_message_at,
@@ -178,12 +185,18 @@ export interface ConversationDetail {
   is_waiting_on_bot: boolean;
   bot_paused: boolean;
   notes: string | null;
+  // Phase 7
+  country_code: string | null;
+  niche: string | null;
+  niche_detail: string | null;
+  meet_preferred_time: string | null;
   messages: MessageRow[];
 }
 
 const stmtGetConversation = db.prepare<[string]>(
   `SELECT c.phone, c.whatsapp_name, c.state, c.created_at, c.updated_at,
           c.bot_paused, c.notes,
+          c.country_code, c.niche, c.niche_detail, c.meet_preferred_time,
           l.id AS lead_id, l.status AS lead_status
      FROM conversations c
      LEFT JOIN leads l ON l.phone = c.phone
@@ -205,6 +218,10 @@ interface ConvoRawRow {
   updated_at: number;
   bot_paused: number;
   notes: string | null;
+  country_code: string | null;
+  niche: string | null;
+  niche_detail: string | null;
+  meet_preferred_time: string | null;
   lead_id: number | null;
   lead_status: LeadStatus | null;
 }
@@ -222,6 +239,8 @@ export function getConversationDetail(phone: string): ConversationDetail | null 
     created_at: row.created_at,
     updated_at: row.updated_at,
     bot_paused: row.bot_paused,
+    country_code: row.country_code,
+    niche: row.niche,
     inbound_count: 0,
     outbound_count: 0,
     last_message_at: last?.created_at ?? null,
@@ -243,6 +262,10 @@ export function getConversationDetail(phone: string): ConversationDetail | null 
     lead_id: row.lead_id,
     bot_paused: row.bot_paused === 1,
     notes: row.notes,
+    country_code: row.country_code,
+    niche: row.niche,
+    niche_detail: row.niche_detail,
+    meet_preferred_time: row.meet_preferred_time,
     ...flags,
     messages,
   };

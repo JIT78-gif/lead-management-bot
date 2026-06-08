@@ -1,13 +1,26 @@
 export const SCHEMA = `
 CREATE TABLE IF NOT EXISTS conversations (
-  phone           TEXT PRIMARY KEY,
-  whatsapp_name   TEXT,
-  state           TEXT NOT NULL,
-  collected       TEXT NOT NULL DEFAULT '{}',
-  bot_paused      INTEGER NOT NULL DEFAULT 0,
-  notes           TEXT,
-  created_at      INTEGER NOT NULL,
-  updated_at      INTEGER NOT NULL
+  phone                 TEXT PRIMARY KEY,
+  whatsapp_name         TEXT,
+  state                 TEXT NOT NULL,
+  collected             TEXT NOT NULL DEFAULT '{}',
+  bot_paused            INTEGER NOT NULL DEFAULT 0,
+  notes                 TEXT,
+  -- Phase 7: country / niche routing — set on the first inbound and
+  -- carried through to the lead row when qualified.
+  country_code          TEXT,
+  niche                 TEXT,
+  niche_detail          TEXT,
+  meet_preferred_time   TEXT,
+  -- Phase 8: server-side booking state machine for the international
+  -- Meet flow (NULL when not active / India / Google disconnected).
+  meet_status           TEXT,
+  meet_proposed_iso     TEXT,
+  meet_event_id         TEXT,
+  meet_link             TEXT,
+  customer_email        TEXT,
+  created_at            INTEGER NOT NULL,
+  updated_at            INTEGER NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS messages (
@@ -36,12 +49,23 @@ CREATE TABLE IF NOT EXISTS leads (
   notes                    TEXT,
   last_status_change_at    INTEGER,
   last_contact_at          INTEGER,
+  -- Phase 7: mirrored from conversations for filtering on the Leads view
+  country_code             TEXT,
+  niche                    TEXT,
+  niche_detail             TEXT,
+  meet_preferred_time      TEXT,
+  -- Phase 8: mirrored Meet booking details
+  meet_event_id            TEXT,
+  meet_link                TEXT,
+  customer_email           TEXT,
   created_at               INTEGER NOT NULL,
   updated_at               INTEGER NOT NULL,
   FOREIGN KEY (phone) REFERENCES conversations(phone)
 );
 
 CREATE INDEX IF NOT EXISTS idx_leads_status   ON leads(status);
+CREATE INDEX IF NOT EXISTS idx_leads_country  ON leads(country_code);
+CREATE INDEX IF NOT EXISTS idx_leads_niche    ON leads(niche);
 CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
 CREATE INDEX IF NOT EXISTS idx_messages_phone_created ON messages(phone, created_at);
 
@@ -69,6 +93,17 @@ CREATE TABLE IF NOT EXISTS calls (
 
 CREATE INDEX IF NOT EXISTS idx_calls_phone   ON calls(phone);
 CREATE INDEX IF NOT EXISTS idx_calls_verdict ON calls(verdict);
+
+-- Phase 8: owner's Google OAuth tokens. Single row at id=1.
+CREATE TABLE IF NOT EXISTS google_oauth (
+  id              INTEGER PRIMARY KEY CHECK (id = 1),
+  account_email   TEXT NOT NULL,
+  refresh_token   TEXT NOT NULL,
+  access_token    TEXT,
+  access_expires  INTEGER,
+  connected_at    INTEGER NOT NULL,
+  updated_at      INTEGER NOT NULL
+);
 
 -- Phase 5: cache for AI artifacts (coaching, pre-call brief, weekly digest,
 -- win-pattern). One row per (kind, ref_key). expires_at NULL = never expires.

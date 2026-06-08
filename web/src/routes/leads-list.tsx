@@ -5,6 +5,7 @@ import { Phone, Search, Globe, Instagram, Inbox, ChevronRight } from 'lucide-rea
 import { leadsApi, type Lead, type LeadStatus } from '../lib/api.ts';
 import { formatPhone, timeAgo, titleCase } from '../lib/format.ts';
 import StatusBadge from '../components/status-badge.tsx';
+import CountryNichePills from '../components/country-niche-pills.tsx';
 
 type Filter = 'all' | LeadStatus;
 
@@ -18,8 +19,26 @@ const FILTERS: { value: Filter; label: string }[] = [
   { value: 'lost', label: 'Lost' },
 ];
 
+type NicheFilter =
+  | 'all'
+  | 'real_estate'
+  | 'healthcare'
+  | 'restaurant'
+  | 'education'
+  | 'visa_tourism';
+
+const NICHE_FILTERS: { value: NicheFilter; label: string }[] = [
+  { value: 'all',          label: 'All' },
+  { value: 'real_estate',  label: 'Real Estate' },
+  { value: 'healthcare',   label: 'Healthcare' },
+  { value: 'restaurant',   label: 'Restaurant' },
+  { value: 'education',    label: 'Education' },
+  { value: 'visa_tourism', label: 'Visa' },
+];
+
 export default function LeadsListRoute() {
   const [filter, setFilter] = useState<Filter>('all');
+  const [nicheFilter, setNicheFilter] = useState<NicheFilter>('all');
   const [search, setSearch] = useState('');
 
   const query = useQuery({
@@ -32,7 +51,14 @@ export default function LeadsListRoute() {
     refetchInterval: 30_000,
   });
 
-  const leads = query.data?.leads ?? [];
+  // Client-side niche filter on top of the server-side status + search.
+  // Cheap (the page is already capped at a few hundred leads) and avoids
+  // adding a new query param.
+  const allLeads = query.data?.leads ?? [];
+  const leads =
+    nicheFilter === 'all'
+      ? allLeads
+      : allLeads.filter((l) => l.niche === nicheFilter);
 
   const counts = useMemo(() => {
     const c: Record<Filter, number> = {
@@ -114,6 +140,26 @@ export default function LeadsListRoute() {
         </div>
       </div>
 
+      {/* ── Niche filter (Phase 7) ── */}
+      <div className="mb-6 -mx-1 flex gap-1 overflow-x-auto px-1 pb-1">
+        {NICHE_FILTERS.map((f) => {
+          const active = nicheFilter === f.value;
+          return (
+            <button
+              key={f.value}
+              onClick={() => setNicheFilter(f.value)}
+              className={`inline-flex h-9 shrink-0 items-center rounded-sm px-3 text-[11px] font-medium uppercase tracking-[0.14em] transition-colors sm:h-8 ${
+                active
+                  ? 'bg-ink text-paper'
+                  : 'bg-surface-1 text-ink-3 border border-border hover:bg-surface-2 hover:text-ink'
+              }`}
+            >
+              {f.label}
+            </button>
+          );
+        })}
+      </div>
+
       {/* ── List ── */}
       {query.isLoading && <LoadingSkeleton />}
 
@@ -158,8 +204,9 @@ function LeadCard({ lead }: { lead: Lead }) {
 
       <div className="grid gap-4 p-5 sm:grid-cols-[1fr_auto] sm:items-center sm:gap-6">
         <div className="min-w-0">
-          <div className="mb-2 flex items-center gap-3">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
             <StatusBadge status={lead.status} size="sm" />
+            <CountryNichePills countryCode={lead.country_code} niche={lead.niche} />
             <span className="text-[11px] uppercase tracking-[0.16em] text-ink-4">
               {timeAgo(lead.created_at)}
             </span>

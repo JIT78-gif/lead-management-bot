@@ -4,6 +4,7 @@ import type { ConversationListItem } from '../lib/api.ts';
 import { formatPhone, timeAgo } from '../lib/format.ts';
 import ConvoStateBadge from './convo-state-badge.tsx';
 import StallBadge from './stall-badge.tsx';
+import CountryNichePills from './country-niche-pills.tsx';
 
 /** One row in the Chats list. */
 export default function ConversationCard({
@@ -69,6 +70,7 @@ export default function ConversationCard({
         <div className="mt-2 flex flex-wrap items-center gap-1.5">
           <ConvoStateBadge state={convo.state} />
           {convo.is_stalled && <StallBadge />}
+          <CountryNichePills countryCode={convo.country_code} niche={convo.niche} />
           {convo.bot_paused && (
             <span
               className="inline-flex items-center gap-1 rounded-xs px-1.5 py-px text-[10px] font-medium uppercase tracking-[0.14em]"

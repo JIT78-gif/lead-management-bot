@@ -22,6 +22,8 @@ import CallUploader from '../components/call-uploader.tsx';
 import CallsList from '../components/calls-list.tsx';
 import PrecallBriefBanner from '../components/precall-brief.tsx';
 import ChatTakeover from '../components/chat-takeover.tsx';
+import CountryNichePills from '../components/country-niche-pills.tsx';
+import { countryInfo, nicheLabel } from '../lib/country-niche.ts';
 
 export default function LeadDetailRoute() {
   const { phone = '' } = useParams<{ phone: string }>();
@@ -144,12 +146,28 @@ export default function LeadDetailRoute() {
             {lead.name || 'Unnamed lead'}
           </h1>
 
+          {(lead.country_code || lead.niche) && (
+            <div className="mt-3">
+              <CountryNichePills
+                countryCode={lead.country_code}
+                niche={lead.niche}
+                size="md"
+              />
+            </div>
+          )}
+
           <dl className="mt-5 grid grid-cols-1 gap-x-6 gap-y-3 text-[14px] sm:grid-cols-2">
             {lead.industry && (
               <Row label="Industry" value={titleCase(lead.industry)} />
             )}
+            {lead.niche_detail && nicheLabel(lead.niche) && (
+              <Row label={`${nicheLabel(lead.niche)} type`} value={titleCase(lead.niche_detail)} />
+            )}
             {lead.team_size && (
               <Row label="Team size" value={`${lead.team_size} people`} />
+            )}
+            {lead.country_code && (
+              <Row label="Country" value={`${countryInfo(lead.country_code).flag} ${countryInfo(lead.country_code).name}`} />
             )}
             <Row
               label="WhatsApp"
@@ -157,6 +175,32 @@ export default function LeadDetailRoute() {
                 <span className="font-mono">{formatPhone(lead.phone)}</span>
               }
             />
+            {lead.meet_link ? (
+              <Row
+                label="Google Meet"
+                value={
+                  <a
+                    href={lead.meet_link}
+                    target="_blank"
+                    rel="noreferrer noopener"
+                    className="inline-flex items-center gap-1.5 text-ink underline-offset-2 hover:underline"
+                    style={{ color: 'var(--color-accent)' }}
+                  >
+                    🟢 Booked — open Meet
+                  </a>
+                }
+              />
+            ) : (
+              lead.meet_preferred_time && (
+                <Row
+                  label="Meet preferred"
+                  value={<span className="text-ink">{lead.meet_preferred_time}</span>}
+                />
+              )
+            )}
+            {lead.customer_email && (
+              <Row label="Email" value={<span className="text-ink-2">{lead.customer_email}</span>} />
+            )}
             {(lead.website_url || lead.social_handle) && (
               <Row
                 label={lead.website_url ? 'Website' : 'Social'}

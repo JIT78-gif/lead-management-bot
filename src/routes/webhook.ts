@@ -13,11 +13,16 @@ import {
   getOrCreateConversation,
   listMessages,
   saveQualifiedLead,
+  setConversationRouting,
   updateConversation,
   type ConversationState,
 } from '../services/leads.js';
 import { notifyNewChat, notifySalesteam } from '../services/notify.js';
 import { sendAlert, leadFailureAlert } from '../services/alert.js';
+import { detectCountry } from '../services/country-detect.js';
+import { detectNiche } from '../services/niche-detect.js';
+import { isConnected as googleConnected } from '../services/google-oauth.js';
+import { advanceBooking, startBooking } from '../services/meet-booking.js';
 import { chooseBestName, normaliseDisplayName } from '../services/name-sanitize.js';
 
 const FALLBACK_REPLY =
@@ -124,6 +129,30 @@ async function processMessage(
   const conv = getOrCreateConversation(msg.phone, msg.whatsappName);
   log.info({ phone: msg.phone, state: conv.state, isBrandNewChat }, 'conversation state');
 
+  // Phase 7 — stamp the conversation with detected country + niche on the
+  // very first inbound. Country comes from the phone prefix; niche comes
+  // from keyword-matching the customer's first message (which Meta ads
+  // pre-fill per campaign). Both are cheap, deterministic, server-side.
+  let routedCountry = detectCountry(msg.phone);
+  let routedNiche = detectNiche(msg.text);
+  if (isBrandNewChat) {
+    setConversationRouting(msg.phone, routedCountry.code, routedNiche);
+    log.info(
+      { phone: msg.phone, country: routedCountry.code, niche: routedNiche },
+      'first inbound: stamped country + niche on conversation'
+    );
+  } else {
+    // Re-use what was already stored so the prompt sees a stable value
+    // even if the customer's later messages don't repeat the niche
+    // keyword.
+    if (conv.country_code) {
+      routedCountry = detectCountry(msg.phone); // re-derive for `name` + `flag`
+    }
+    if (conv.niche) {
+      routedNiche = conv.niche as ReturnType<typeof detectNiche>;
+    }
+  }
+
   // Fire-and-forget salesperson nudge on the first ever message.
   // Don't await — the bot's reply shouldn't block on this.
   if (isBrandNewChat) {
@@ -159,6 +188,89 @@ async function processMessage(
     return;
   }
 
+  // Phase 8 — if we're mid-booking, route to the deterministic state
+  // machine instead of running another LLM turn. The LLM stops being
+  // useful once we've started the calendar dance.
+  if (conv.meet_status && ['awaiting_time', 'awaiting_alt_confirm', 'awaiting_email'].includes(conv.meet_status)) {
+    log.info({ phone: msg.phone, meet_status: conv.meet_status }, 'advancing meet booking');
+    const result = await advanceBooking(
+      conv,
+      msg.text,
+      msg.whatsappName ?? conv.whatsapp_name,
+      log
+    );
+
+    if (result.kind === 'reply') {
+      await sendAndLog(msg.phone, result.text);
+      return;
+    }
+
+    if (result.kind === 'finished') {
+      // Save the lead now that the booking is locked in. We pull
+      // the latest conversation row so saveQualifiedLead picks up
+      // the meet_event_id / link / email we just stamped.
+      const finalConv = getConversation(msg.phone);
+      const collected = finalConv ? safeParseCollected(finalConv.collected) : {};
+      saveQualifiedLead(msg.phone, {
+        name: collected.name ?? null,
+        industry: collected.industry ?? null,
+        team_size: collected.team_size ?? null,
+        website_url: collected.website_url ?? null,
+        social_handle: collected.social_handle ?? null,
+        niche_detail: collected.niche_detail ?? null,
+        ...result.patch,
+      });
+      updateConversation(msg.phone, 'qualified', {
+        name: collected.name ?? null,
+        industry: collected.industry ?? null,
+        team_size: collected.team_size ?? null,
+        website_url: collected.website_url ?? null,
+        social_handle: collected.social_handle ?? null,
+      });
+      notifySalesteam(
+        msg.phone,
+        {
+          name: collected.name ?? null,
+          industry: collected.industry ?? null,
+          team_size: collected.team_size ?? null,
+          website_url: collected.website_url ?? null,
+          social_handle: collected.social_handle ?? null,
+          niche_detail: collected.niche_detail ?? null,
+          meet_preferred_time: collected.meet_preferred_time ?? null,
+        },
+        log
+      ).catch(() => {});
+      await sendAndLog(msg.phone, result.text);
+      return;
+    }
+
+    // fallback_manual — preserve Phase 7 behavior: ask the customer
+    // for a preferred time (text) and let the salesperson book by hand.
+    await sendAndLog(
+      msg.phone,
+      "Our team will reach out shortly with a Google Meet invite. Talk soon!"
+    );
+    const finalConv = getConversation(msg.phone);
+    const collected = finalConv ? safeParseCollected(finalConv.collected) : {};
+    saveQualifiedLead(msg.phone, {
+      name: collected.name ?? null,
+      industry: collected.industry ?? null,
+      team_size: collected.team_size ?? null,
+      website_url: collected.website_url ?? null,
+      social_handle: collected.social_handle ?? null,
+      niche_detail: collected.niche_detail ?? null,
+      meet_preferred_time: result.text || collected.meet_preferred_time || null,
+    });
+    updateConversation(msg.phone, 'qualified', {
+      name: collected.name ?? null,
+      industry: collected.industry ?? null,
+      team_size: collected.team_size ?? null,
+      website_url: collected.website_url ?? null,
+      social_handle: collected.social_handle ?? null,
+    });
+    return;
+  }
+
   log.info({ phone: msg.phone, state: conv.state }, 'running Gemini turn');
 
   // Build conversation history (only customer-visible turns, no the just-inserted
@@ -167,7 +279,13 @@ async function processMessage(
 
   let turn;
   try {
-    turn = await runTurn(history, msg.whatsappName ?? conv.whatsapp_name, conv.state, log);
+    turn = await runTurn(
+      history,
+      msg.whatsappName ?? conv.whatsapp_name,
+      conv.state,
+      log,
+      { country: routedCountry, niche: routedNiche }
+    );
   } catch (err) {
     // Gemini fully failed (twice) — apologise so the customer isn't stranded.
     await sendAndLog(msg.phone, FALLBACK_REPLY).catch(() => {});
@@ -215,6 +333,39 @@ async function processMessage(
   if (turn.action === 'DISQUALIFY') {
     nextState = 'disqualified';
   } else if (turn.action === 'QUALIFY_AND_SAVE') {
+    // Phase 8 — for international leads with Google connected, DON'T
+    // save yet. Stamp the conversation collected data, start the meet
+    // booking sub-flow, and override the LLM's reply with the booking
+    // question. Lead is saved later when the state machine finishes.
+    if (!routedCountry.isIndia && googleConnected()) {
+      log.info({ phone: msg.phone }, 'intercepting QUALIFY_AND_SAVE for Meet booking');
+      // Stash collected data on the conversation row so we can pull
+      // it later when saveQualifiedLead actually runs.
+      updateConversation(msg.phone, 'collecting', finalData);
+      // Re-fetch the conversation so startBooking sees the freshest row.
+      const freshConv = getConversation(msg.phone) ?? conv;
+      const bookingResult = startBooking(freshConv);
+      const reply =
+        bookingResult.kind === 'reply' ? bookingResult.text : turn.reply;
+      try {
+        await sendAndLog(msg.phone, reply);
+      } catch (err) {
+        sendAlert(
+          leadFailureAlert({
+            reason: 'send_failed',
+            customerPhone: msg.phone,
+            customerName: msg.whatsappName ?? conv.whatsapp_name,
+            customerLastMessage: msg.text,
+            conversationState: 'collecting',
+            errorMessage: err instanceof Error ? err.message : String(err),
+          }),
+          log
+        );
+        throw err;
+      }
+      return;
+    }
+
     nextState = 'qualified';
     saveQualifiedLead(msg.phone, finalData);
     // Fire-and-forget: notify each salesperson on WhatsApp. Don't block the
@@ -258,4 +409,24 @@ async function processMessage(
 async function sendAndLog(phone: string, text: string): Promise<void> {
   const metaId = await sendText(phone, text);
   appendMessage(phone, 'out', text, metaId);
+}
+
+// Best-effort JSON parse for the `collected` blob stored on the
+// conversation row. Returns {} for any parse failure so the caller
+// always gets an object.
+function safeParseCollected(s: string | null | undefined): {
+  name?: string | null;
+  industry?: string | null;
+  team_size?: 'solo' | '2-5' | '6-10' | '11-25' | '25+' | null;
+  website_url?: string | null;
+  social_handle?: string | null;
+  niche_detail?: string | null;
+  meet_preferred_time?: string | null;
+} {
+  if (!s) return {};
+  try {
+    return JSON.parse(s);
+  } catch {
+    return {};
+  }
 }

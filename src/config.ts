@@ -89,6 +89,28 @@ export const config = {
     digestRecipient: optional('DIGEST_RECIPIENT', ''),
   },
 
+  // Phase 8 — Google Calendar OAuth + Meet auto-booking for
+  // international leads. Leave clientId blank to disable the feature
+  // entirely (bot falls back to Phase 7 manual flow).
+  google: {
+    clientId:     optional('GOOGLE_OAUTH_CLIENT_ID', ''),
+    clientSecret: optional('GOOGLE_OAUTH_CLIENT_SECRET', ''),
+    redirectUri:  optional(
+      'GOOGLE_OAUTH_REDIRECT_URI',
+      'https://whatsapp.botifys.com/api/auth/google/callback'
+    ),
+    calendarId:   optional('GOOGLE_CALENDAR_ID', 'primary'),
+    meetDurationMinutes: Number(optional('MEET_DURATION_MINUTES', '30')),
+    workingDays: optional('WORKING_DAYS', 'mon,tue,wed,thu,fri,sat')
+      .toLowerCase()
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+    workingHoursStart: optional('WORKING_HOURS_START', '09:00'),
+    workingHoursEnd:   optional('WORKING_HOURS_END', '20:00'),
+    workingTimezone:   optional('WORKING_TIMEZONE', 'Asia/Kolkata'),
+  },
+
   alerts: {
     // Resend API key (https://resend.com — free 3,000 emails/month).
     // Leave empty to disable email alerts.

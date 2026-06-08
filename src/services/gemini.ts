@@ -2,6 +2,13 @@ import { Type, type Schema } from '@google/genai';
 import { SYSTEM_INSTRUCTION } from '../prompts/system.js';
 import type { LeadData, MessageRow, TeamSize } from './leads.js';
 import { callJsonModel, type LLMTurn } from './llm.js';
+import type { CountryInfo } from './country-detect.js';
+import type { Niche } from './niche-detect.js';
+
+export interface RoutingContext {
+  country: CountryInfo;
+  niche: Niche;
+}
 
 export type BotAction = 'ASK_NEXT' | 'DISQUALIFY' | 'QUALIFY_AND_SAVE';
 
@@ -31,8 +38,20 @@ const RESPONSE_SCHEMA: Schema = {
         },
         website_url: { type: Type.STRING, nullable: true },
         social_handle: { type: Type.STRING, nullable: true },
+        // Phase 7 — populated by the niche-specific question (step 5b)
+        // and the Google-Meet time question (international close).
+        niche_detail: { type: Type.STRING, nullable: true },
+        meet_preferred_time: { type: Type.STRING, nullable: true },
       },
-      required: ['name', 'industry', 'team_size', 'website_url', 'social_handle'],
+      required: [
+        'name',
+        'industry',
+        'team_size',
+        'website_url',
+        'social_handle',
+        'niche_detail',
+        'meet_preferred_time',
+      ],
     },
   },
   required: ['reply', 'action', 'data'],
@@ -41,7 +60,8 @@ const RESPONSE_SCHEMA: Schema = {
 function historyToContents(
   history: MessageRow[],
   whatsappName: string | null,
-  currentState: string
+  currentState: string,
+  routing: RoutingContext | null
 ): LLMTurn[] {
   const contents: LLMTurn[] = [];
 
@@ -61,7 +81,14 @@ function historyToContents(
       'out which flow step you are on, and proceed with the NEXT step. ' +
       'Do not repeat a step you have already completed.';
 
-  const meta = `[meta: whatsapp_profile_name=${whatsappName ?? 'unknown'}, conversation_state=${currentState}, bot_replies_sent=${botRepliesSoFar}]\n${flowHint}`;
+  // Phase 7 routing hint — the bot reads these to pick the right
+  // niche-specific extra question (step 5b) and the right close (phone
+  // call vs Google Meet).
+  const routingHint = routing
+    ? `country_code=${routing.country.code}, country_name=${routing.country.name}, is_india=${routing.country.isIndia}, niche=${routing.niche}`
+    : 'country_code=XX, is_india=false, niche=other';
+
+  const meta = `[meta: whatsapp_profile_name=${whatsappName ?? 'unknown'}, conversation_state=${currentState}, bot_replies_sent=${botRepliesSoFar}, ${routingHint}]\n${flowHint}`;
 
   for (const m of history) {
     contents.push({
@@ -141,6 +168,8 @@ function validate(raw: unknown): BotTurn {
     team_size: teamSize,
     website_url: cleanString(d.website_url),
     social_handle: cleanString(d.social_handle),
+    niche_detail: cleanString(d.niche_detail),
+    meet_preferred_time: cleanString(d.meet_preferred_time),
   };
 
   return { reply, action, data };
@@ -171,9 +200,10 @@ export async function runTurn(
   history: MessageRow[],
   whatsappName: string | null,
   currentState: string,
-  log?: { warn?: (...a: unknown[]) => void; info?: (...a: unknown[]) => void }
+  log?: { warn?: (...a: unknown[]) => void; info?: (...a: unknown[]) => void },
+  routing: RoutingContext | null = null
 ): Promise<BotTurn> {
-  const contents = historyToContents(history, whatsappName, currentState);
+  const contents = historyToContents(history, whatsappName, currentState, routing);
   try {
     return await callOnce(contents, log);
   } catch (err) {

@@ -52,4 +52,44 @@ export function runMigrations(db: Database.Database): void {
   addColumnIfMissing(db, 'conversations', 'bot_paused', 'INTEGER NOT NULL DEFAULT 0');
   addColumnIfMissing(db, 'conversations', 'notes', 'TEXT');
   addColumnIfMissing(db, 'messages', 'sent_by', 'TEXT');
+
+  // Phase 7 — country + niche routing for international expansion.
+  addColumnIfMissing(db, 'conversations', 'country_code',        'TEXT');
+  addColumnIfMissing(db, 'conversations', 'niche',               'TEXT');
+  addColumnIfMissing(db, 'conversations', 'niche_detail',        'TEXT');
+  addColumnIfMissing(db, 'conversations', 'meet_preferred_time', 'TEXT');
+  addColumnIfMissing(db, 'leads',         'country_code',        'TEXT');
+  addColumnIfMissing(db, 'leads',         'niche',               'TEXT');
+  addColumnIfMissing(db, 'leads',         'niche_detail',        'TEXT');
+  addColumnIfMissing(db, 'leads',         'meet_preferred_time', 'TEXT');
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_country ON leads(country_code)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_leads_niche   ON leads(niche)`);
+
+  // Phase 8 — Google Calendar OAuth + auto-Meet booking.
+  // The google_oauth table is created by the canonical schema on
+  // fresh installs; no ALTER needed since it's a new table.
+  addColumnIfMissing(db, 'conversations', 'meet_status',       'TEXT');
+  addColumnIfMissing(db, 'conversations', 'meet_proposed_iso', 'TEXT');
+  addColumnIfMissing(db, 'conversations', 'meet_event_id',     'TEXT');
+  addColumnIfMissing(db, 'conversations', 'meet_link',         'TEXT');
+  addColumnIfMissing(db, 'conversations', 'customer_email',    'TEXT');
+  addColumnIfMissing(db, 'leads', 'meet_event_id',  'TEXT');
+  addColumnIfMissing(db, 'leads', 'meet_link',      'TEXT');
+  addColumnIfMissing(db, 'leads', 'customer_email', 'TEXT');
+
+  // The google_oauth table on an EXISTING db: create it if missing
+  // (PRAGMA table_info returns nothing for non-existent tables, and
+  // our addColumnIfMissing helper assumes the table exists). Use raw
+  // CREATE TABLE IF NOT EXISTS.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS google_oauth (
+      id              INTEGER PRIMARY KEY CHECK (id = 1),
+      account_email   TEXT NOT NULL,
+      refresh_token   TEXT NOT NULL,
+      access_token    TEXT,
+      access_expires  INTEGER,
+      connected_at    INTEGER NOT NULL,
+      updated_at      INTEGER NOT NULL
+    )
+  `);
 }

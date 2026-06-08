@@ -9,6 +9,7 @@ import LeadDetailRoute from './routes/lead-detail.tsx';
 import StatsRoute from './routes/stats.tsx';
 import ConversationsListRoute from './routes/conversations-list.tsx';
 import ConversationDetailRoute from './routes/conversation-detail.tsx';
+import SettingsRoute from './routes/settings.tsx';
 import AuthGuard from './components/auth-guard.tsx';
 import './styles/globals.css';
 
@@ -57,6 +58,7 @@ createRoot(document.getElementById('root')!).render(
             <Route path="chats" element={<ConversationsListRoute />} />
             <Route path="chats/:phone" element={<ConversationDetailRoute />} />
             <Route path="stats" element={<StatsRoute />} />
+            <Route path="settings" element={<SettingsRoute />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

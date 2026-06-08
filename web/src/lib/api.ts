@@ -79,9 +79,31 @@ export interface Lead {
   status: LeadStatus;
   notes: string | null;
   last_status_change_at: number | null;
+  // Phase 7
+  country_code: string | null;
+  niche: string | null;
+  niche_detail: string | null;
+  meet_preferred_time: string | null;
+  // Phase 8 — set when the bot auto-booked a Google Meet.
+  meet_event_id?: string | null;
+  meet_link?: string | null;
+  customer_email?: string | null;
   created_at: number;
   updated_at: number;
 }
+
+export interface GoogleStatus {
+  configured: boolean;
+  connected: boolean;
+  email: string | null;
+  connectedAt: number | null;
+}
+
+export const googleApi = {
+  status: () => api.get<GoogleStatus>('/api/google/status'),
+  startConnect: () => api.get<{ url: string }>('/api/auth/google/start'),
+  disconnect: () => api.post<{ ok: true }>('/api/google/disconnect'),
+};
 
 export const authApi = {
   login: (password: string) => api.post<{ ok: true }>('/api/auth/login', { password }),
@@ -250,6 +272,9 @@ export interface ConversationListItem {
   is_stalled: boolean;
   is_waiting_on_bot: boolean;
   bot_paused?: boolean;
+  // Phase 7
+  country_code?: string | null;
+  niche?: string | null;
 }
 
 export interface ConversationDetail {
@@ -264,6 +289,11 @@ export interface ConversationDetail {
   is_waiting_on_bot: boolean;
   bot_paused: boolean;
   notes: string | null;
+  // Phase 7
+  country_code: string | null;
+  niche: string | null;
+  niche_detail: string | null;
+  meet_preferred_time: string | null;
   messages: Message[];
 }
 
